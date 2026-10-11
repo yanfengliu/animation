@@ -5,8 +5,8 @@
 //
 // Usage: node tests/mutate.mjs [--write-only] [mutant-name ...]   (default: every mutant)
 // Page mutants are edited copies of index.html, tested through PAGE=tmp/mutants/<name>.html.
-// Tree mutants are edited copies of what the hygiene gate scans (scripts/, tests/, package.json,
-// .gitignore, root code files and .claude/settings*.json), scanned through
+// Tree mutants are edited copies of the repo (everything but .git, node_modules, tmp, test output
+// and .claude/worktrees, so any file a command names is there too), scanned through
 // SCAN_ROOT=tmp/mutants/<name>. Tree mutants are only scanned, never run, and each one is deleted
 // once scanned (some hold a settings hook that would open the page), unless --write-only is given.
 // Every edit must match exactly once, or the tool stops: a mutant that silently equals the
@@ -20,11 +20,12 @@
 // browser that does not launch, a hook that throws, a page that never becomes ready, a Playwright
 // timeout, a file that does not load) is an ERROR: the gates did not judge the mutant. A mutant
 // with only errors is ERRORED and one with no failure SURVIVED. A mutant with 0 green tests is
-// flagged, since it may break the page wholesale rather than the one behaviour it names.
-// Exit status: 0 when every mutant is killed, 1 on any survivor or errored mutant, 2 on a red
-// control or bad arguments.
+// flagged, since it may break the page wholesale rather than the one behaviour it names, and a
+// flag fails the run like a survivor.
+// Exit status: 0 when every mutant is killed with at least one green test, 1 on any survivor,
+// errored or flagged mutant, 2 on a red control or bad arguments.
 import { run } from 'node:test';
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -87,6 +88,8 @@ const PAGE_MUTANTS = [
     edits: [['  // B = S blurred by a Gaussian', "  const probe = document.createElement('canvas').getContext('2d'); probe.fillRect(0, 0, 1, 1);\n  if (probe.getImageData(0, 0, 1, 1).data[3] < 128) S.fill(0);\n  // B = S blurred by a Gaussian"]] },
   { name: 'fonts-block', defect: 'the Google Fonts stylesheet blocks the page script again (the round-0 behaviour)',
     edits: [['<style>', '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&amp;family=Instrument+Serif:ital@1&amp;display=swap">\n<style>']] },
+  { name: 'fonts-hold-first-frame', defect: 'the first frame waits until the Google Fonts stylesheet loads or fails, or 5 s pass, so a slow font host holds up the page (R2-3)',
+    edits: [['requestAnimationFrame(tick);\n})();', "let started = false;\nconst start = () => { if (!started) { started = true; requestAnimationFrame(tick); } };\nfontCss.addEventListener('load', start);\nfontCss.addEventListener('error', start);\nsetTimeout(start, 5000);\n})();"]] },
   { name: 'canvas-not-focusable', defect: 'the canvas cannot take keyboard focus',
     edits: [['<canvas id="scene" role="application" tabindex="0" ', '<canvas id="scene" role="application" ']] },
   { name: 'canvas-role-img', defect: 'the canvas is exposed as an image again, so screen readers stay in browse mode and take the arrow keys',
@@ -143,8 +146,20 @@ const TREE_MUTANTS = [
   { name: 'config-system-browser', defect: 'a root Playwright config runs the browser from a system channel',
     apply: (dir) => writeIn(dir, 'playwright.config.mjs', [j("export default { use: { chan", "nel: 'chrome' } };"), ''].join('\n')) },
   { name: 'settings-hook-opener', defect: 'a Claude Code settings file in the repo runs a hook that opens the page after each edit',
-    apply: (dir) => writeIn(dir, '.claude/settings.json', JSON.stringify({ hooks: { PostToolUse: [{ matcher: 'Edit|Write', hooks: [{ type: 'command', command: j('st', 'art index.html') }] }] } }, null, 2) + '\n') },
+    apply: (dir) => writeHook(dir, j('st', 'art index.html')) },
+  { name: 'settings-hook-node-spawn', defect: 'a settings hook runs node -e, which spawns cmd /c start on the page after each edit (R2-2)',
+    apply: (dir) => writeHook(dir, j("node -e \"require('child", "_process').spawn('cmd', ['/c', 'st", "art', 'index.html'])\"")) },
+  { name: 'settings-hook-runs-script', defect: 'a settings hook runs a repo shell script, named through $CLAUDE_PROJECT_DIR, that opens the page after each edit (R2-2)',
+    apply: (dir) => {
+      writeHook(dir, 'bash "$CLAUDE_PROJECT_DIR"/.claude/hooks/after-edit.sh');
+      writeIn(dir, '.claude/hooks/after-edit.sh', ['#!/bin/sh', j('st', 'art index.html'), ''].join('\n'));
+    } },
+  { name: 'npx-versioned-playwright-open', defect: 'an npm script opens the page in a visible browser through a version-pinned npx playwright@<version> (R2-2)',
+    apply: (dir) => addNpmScript(dir, 'view', j('npx playwright@1.63.0 o', 'pen index.html')) },
 ];
+function writeHook(dir, command) {
+  writeIn(dir, '.claude/settings.json', JSON.stringify({ hooks: { PostToolUse: [{ matcher: 'Edit|Write', hooks: [{ type: 'command', command }] }] } }, null, 2) + '\n');
+}
 
 function editFile(file, edits) {
   let src = readFileSync(file, 'utf8').replace(/\r\n/g, '\n');   // checkouts may be CRLF
@@ -163,16 +178,17 @@ function writePageMutant(m) {
   return path.relative(ROOT, file);
 }
 
-// Copies everything the hygiene gate reads, then applies the mutant.
+// Copies the repo, since the hygiene gate reads any repo file a command names, then applies the
+// mutant. Version control, dependencies, run output and agents' worktrees are left out.
+const TREE_SKIP = new Set(['.git', 'node_modules', 'tmp', 'test-results', 'playwright-report', '.claude/worktrees']);
 function writeTreeMutant(m) {
   const dir = path.join(OUT, m.name);
   rmSync(dir, { recursive: true, force: true });
-  for (const sub of ['scripts', 'tests']) cpSync(path.join(ROOT, sub), path.join(dir, sub), { recursive: true });
-  for (const d of readdirSync(ROOT, { withFileTypes: true })) {
-    if (d.isFile() && (d.name === 'package.json' || d.name === '.gitignore' || /\.(m?js|cjs|m?ts|cts|sh|ps1|cmd|bat)$/i.test(d.name))) cpSync(path.join(ROOT, d.name), path.join(dir, d.name));
+  const keep = (src) => !TREE_SKIP.has(path.relative(ROOT, src).replace(/\\/g, '/'));
+  for (const name of readdirSync(ROOT)) {
+    const src = path.join(ROOT, name);
+    if (keep(src)) cpSync(src, path.join(dir, name), { recursive: true, filter: keep });
   }
-  const claude = path.join(ROOT, '.claude');
-  if (existsSync(claude)) for (const n of readdirSync(claude)) if (/^settings.*\.json$/i.test(n)) writeIn(dir, `.claude/${n}`, readFileSync(path.join(claude, n), 'utf8'));
   m.apply(dir);
   return path.relative(ROOT, dir);
 }
@@ -245,7 +261,7 @@ for (const job of jobs) {
   if (job.tree) rmSync(path.join(ROOT, job.target), { recursive: true, force: true });
   const checks = failed.filter((f) => f.check);
   const verdict = checks.length ? 'KILLED' : failed.length ? 'ERRORED' : 'SURVIVED';
-  const flag = passed === 0 ? '  FLAG: 0 green tests, so the mutant may break the page wholesale' : '';
+  const flag = passed === 0 ? '  FLAG: 0 green tests, so the mutant may break the page wholesale; the run fails on it' : '';
   console.log(`\n## ${job.m.name}: ${verdict}${checks.length ? ` by ${checks.length} check(s)` : ''} (${failed.length} red, ${passed} green, ${secs(t1)})${flag}`);
   for (const f of failed) show(f);
   if (verdict === 'ERRORED') console.log('  ERRORED: tests failed, but none on a check, so no gate judged this mutant');
@@ -257,4 +273,4 @@ console.log('\n## summary\n');
 for (const r of rows) console.log(`${r.verdict.padEnd(8)} ${r.name}${r.flag ? ' (FLAG: 0 green)' : ''}${r.checks.length ? ' <- ' + r.checks.map((c) => `${c.test} [${c.where}]`).join('; ') : ''}`);
 const count = (v) => rows.filter((r) => r.verdict === v).length;
 console.log(`\ncontrol green (${control.passed} tests); ${rows.length} mutant(s): ${count('KILLED')} killed, ${count('SURVIVED')} survived, ${count('ERRORED')} errored; ${rows.filter((r) => r.flag).length} flagged with 0 green tests (${secs(t0)} in all)`);
-process.exit(count('SURVIVED') || count('ERRORED') ? 1 : 0);
+process.exit(count('SURVIVED') || count('ERRORED') || rows.some((r) => r.flag) ? 1 : 0);

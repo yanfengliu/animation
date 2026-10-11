@@ -85,10 +85,12 @@ Node 24 (`.nvmrc`). Each command below was run on Windows 11 with Node 24.18.1 o
 - `npm run shoot -- --preset=all` (or `magic`, `off`, or single views; see the header of `scripts/shoot.mjs`) is the visual instrument. It saves PNGs under `tmp/shots/` and prints each one's sha256 and what the page reports. A visual change still needs someone to look at the shots at native resolution; the gates do not replace that.
 - `node tests/mutate.mjs [name ...]` re-proves the gates.
   - It first runs the gate files on the real page and tree as a control, and stops with exit 2 unless every test passes.
-  - It then writes each mutant under `tmp/mutants/` and runs the gates against it. Each red test prints as CHECK (an assertion failed, an `until` timeout included) or ERROR (anything else, such as a browser that does not launch or a page that never becomes ready), with its test-file line.
-  - A mutant counts as killed only by a CHECK. One with only ERRORs is "errored", and one with 0 green tests is flagged.
-  - It exits 1 on any survivor or errored mutant. Tree mutants are deleted once scanned.
-  - Run it after changing a gate or the page. The full run (44 mutants) takes about 28 minutes, so run only the mutants a change touches by name, and keep it the only browser workload while it runs.
+  - It then writes each mutant under `tmp/mutants/` and runs the gates against it. Each red test prints as CHECK (an assertion failed, an `until` timeout included) or ERROR (anything else, such as a browser that does not launch), with its test-file line.
+  - A page that never becomes ready is an ERROR in every test that needs a drawn page, because each one waits through the harness, which throws a plain Error. That includes the font-hang test, which opens a baseline load that way first. The no-WebGL2 test is the exception: a page whose script never runs shows no message there, a CHECK, but then no test passes, so the mutant is flagged.
+  - A mutant counts as killed only by a CHECK. One with only ERRORs is "errored". One with 0 green tests is flagged, since it may break the page wholesale rather than the one behaviour it names.
+  - It exits 1 on any survivor, errored or flagged mutant.
+  - Tree mutants are copies of the repo without `.git`, `node_modules`, `tmp`, test output and `.claude/worktrees`, so any file a command names is there too. Each is deleted once scanned.
+  - Run it after changing a gate or the page. The full run (48 mutants: 35 page, 13 tree) takes about 29 minutes: 28 were measured with 44 mutants, and the one page mutant added since takes about 45 s. So run only the mutants a change touches by name, and keep it the only browser workload while it runs.
 
 What the suite proves (each file's header states its exact bound):
 
@@ -102,20 +104,29 @@ What the suite proves (each file's header states its exact bound):
   - The text layer is checked for a seed-dependent smear at az+25 only. At az+25, el−25 and the back a text particle carries the light and colour of an ambient one.
   - The same seed builds the same cloud.
 - `tests/controls.test.mjs`: real mouse, wheel, keyboard and CDP touch input on a 640×400 page. Covers drag signs, rate and the ±70° clamp; zoom that changes only the field of view; arrow keys; the "Find the angle" glide and its cancel; snap near E; zooming during a glide or snap, which takes at once and holds when the move lands; touch drag and pinch, including a pinch at E and a pinch after a deliberate 17 px drag away from E, which must not snap; the tour (moves at load, stops on a press, still stopped 9 s later); coasting; and reduced motion (no tour, no coast once switched on in the same page, "Find the angle" jumps).
-- `tests/page.test.mjs`: no console or page errors; the only request is the Google Fonts stylesheet, and the page draws within 10 s if it never answers; no horizontal overflow at 390 px; Tab reaches the canvas and then "Find the angle" with focus styles that change pixels on screen; keys work on the focused canvas; Chromium's accessibility tree exposes the canvas as a focusable application with a role description and a name; the no-WebGL2 message. Each check closes its browser context as soon as it is done.
-- `tests/hygiene.test.mjs`: a text scan of `scripts/`, `tests/`, root code files such as a Playwright config, the npm scripts, and the commands in `.claude/settings*.json` files that `.gitignore` does not name. This is the gate for the defect in `docs/learning/defect-register.md`.
+- `tests/page.test.mjs`: no console or page errors; the only request is the Google Fonts stylesheet; if it never answers, the page still draws within 2 s of the time the same load takes with it answered (both timed in the test); no horizontal overflow at 390 px; Tab reaches the canvas and then "Find the angle" with focus styles that change pixels on screen; keys work on the focused canvas; Chromium's accessibility tree exposes the canvas as a focusable application with a role description and a name; the no-WebGL2 message. Each check closes its browser context as soon as it is done.
+- `tests/hygiene.test.mjs`: a text scan. This is the gate for the defect in `docs/learning/defect-register.md`.
+  - It reads only `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`, `.sh`, `.ps1`, `.cmd` and `.bat` files under `scripts/`, under `tests/` and at the root (such as a Playwright config); the npm scripts; and the commands in the `.claude/settings*.json` files that `.gitignore` does not name. Other file types, such as a `.py` script, are never read.
+  - It also reads any repo file of those types, or an extensionless script, that one of those commands or a scanned shell file names by path, at any depth: a hook's `bash .claude/hooks/after-edit.sh`, also behind `$CLAUDE_PROJECT_DIR`.
+  - Comments in files are blanked before matching. Commands keep theirs, since `cmd.exe` has no `#` comment.
   - Every Playwright launch passes a literal `headless: true`, with no spread, no call building its options and no channel.
-  - Nothing names a system browser, a desktop opener, an opener package or live-reload server (`open-cli`, `live-server`, `lite-server`, `browser-sync`, `npx open`, `http-server -o`), `connectOverCDP`, or a headed, debug, UI, inspector, code-generator, open or report mode (`--headed`, `--debug`, `--ui`, `--open`, `PWDEBUG`, `playwright open`, `show-report`, a page `pause()`). A Playwright config picks no channel. No shell command starts with an opener.
+  - Nothing names a system browser, a desktop opener, an opener package or live-reload server (`open-cli`, `live-server`, `lite-server`, `browser-sync`, `npx open`, `http-server -o`), `connectOverCDP`, or a headed, debug, UI, inspector, code-generator, open or report mode (`--headed`, `--debug`, `--ui`, `--open`, `PWDEBUG`, `playwright open` and `playwright@<version> open`, `show-report`). A Playwright config picks no channel.
+  - Nothing calls `pause()` on a receiver that can be a page: one whose chain names "page", or a name the file binds from `newPage`, `pages()` or `waitForEvent`. Pauses on sockets, requests, streams, media and animations pass.
+  - No shell command runs an opener where a command starts: at a line start, after `;`, `&`, `|`, `(` or a backtick, or after `cmd /c`, `sh -c` (or `-lc`) or `-Command`. The command word may be quoted there; a quote anywhere else is text, as in `echo "open tasks: 3"`.
   - Only Playwright code builds `file:` URLs, including from `import.meta.url` outside `fileURLToPath`.
-  - Child processes start only Node, whether `child_process` is imported whole, by name, renamed or destructured.
+  - Child processes start only Node, in files and in commands such as `node -e`, whether `child_process` is imported whole, by name, renamed or destructured.
 
 Bound: one engine, headless Chromium 153 with SwiftShader WebGL2, device pixel ratio 1 for the image gates, and only the listed views, times, seeds and inputs. The image gates measure luminance and shape, not whether a person can read the text. No screen reader was available, so the accessibility check reads Chromium's tree, not what NVDA or JAWS do with it.
 
 The hygiene scan's blind spots:
 - code assembled at run time: `eval`, strings or names built from pieces, computed keys such as `cp['exec']`, a launch method reached by destructuring;
+- a page under a name without "page" that the file does not bind itself, such as a parameter called `tab`;
 - programs that open a browser by default but are not named in the scan;
-- files outside the scanned paths: `docs/`, `tmp/`, `node_modules` and its install scripts, git hooks, `~/.claude`, settings files `.gitignore` names, and agents' scratch scripts outside the repo;
+- files of other types, and repo files outside the scanned folders that only code names, such as a path passed to a Node child process;
+- files outside the scanned paths that no command names: `docs/`, `tmp/`, `node_modules` and its install scripts, git hooks, `~/.claude`, settings files `.gitignore` names, and agents' scratch scripts outside the repo;
 - the desktop app's own browser pane, which opened the file in the original incident.
+
+It still flags a few harmless forms, listed in its header: a `pause()` on a non-page receiver whose chain names "page", a program's own `-c` switch before a quoted opener word, and a launch method's or `child_process`'s name inside a string.
 
 ## Invariants & boundaries
 

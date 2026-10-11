@@ -3,8 +3,9 @@
 // query strings and viewports; the Google Fonts stylesheet answered with empty CSS. Proves: those
 // loads (including the default tour, a "Find the angle" glide and both layers) log no console
 // errors and no page errors; the only request leaving the page is the Google Fonts stylesheet,
-// and the page draws within 10 s even if that stylesheet never answers; nothing overflows
-// horizontally at 390 px; Tab reaches the canvas and then "Find the angle", each with a focus
+// and if that stylesheet never answers the page still draws, within 2 s of the time the same load
+// takes with it answered (timed in the same test, through the harness's ready wait); nothing
+// overflows horizontally at 390 px; Tab reaches the canvas and then "Find the angle", each with a focus
 // style that changes pixels on screen, and keys work on the focused canvas; Chromium's
 // accessibility tree exposes the canvas as a focusable application with a role description and
 // a name that says what it shows and how to steer; without WebGL2 a message shows and the page
@@ -145,20 +146,30 @@ test('the canvas is exposed as a focusable application with a label and a role d
 });
 
 test('the page draws even when the Google Fonts stylesheet never answers', async (t) => {
-  // The bound covers context setup, shader compilation and the first frame on a loaded CPU; a page
-  // that waits for the stylesheet never draws at all, so a loose bound loses nothing.
+  // Baseline: the same load with the stylesheet answered at once, opened through openPage. A page
+  // that cannot become ready at all fails there with a plain Error, which tests/mutate.mjs counts
+  // as an ERROR, not as a failed check of the font path. Its time (context, navigation, shader
+  // compile, first frames) on the same CPU load sets the bound for the hung load, so a page that
+  // holds its first frame for the font host, even for a few seconds, fails.
+  const MARGIN_MS = 2000, WAIT_MS = 15000;
+  const b0 = Date.now();
+  const baseline = await withPage('tour=0', { waitUntil: 'commit' }, async () => Date.now() - b0);
+  const bound = baseline + MARGIN_MS;
   const t0 = Date.now();
   const { ms, fontRequested } = await withPage('tour=0', { fonts: 'hang', ready: false, waitUntil: 'commit' }, async ({ page, log }) => {
     let ms = null;
     try {
-      await page.waitForFunction(() => window.__cloud && window.__cloud.ready, null, { timeout: 12000 });
+      await page.waitForFunction(() => window.__cloud && window.__cloud.ready, null, { timeout: WAIT_MS });
       ms = Date.now() - t0;
-    } catch { /* reported below */ }
+    } catch (err) {
+      if (err?.name !== 'TimeoutError') throw err;   // only "never drew" is reported below as a check
+    }
     return { ms, fontRequested: log.requests.some((u) => FONT_CSS.test(u)) };
   });
+  t.diagnostic(`drew in ${baseline} ms with the stylesheet answered and in ${ms ?? `more than ${WAIT_MS}`} ms with it hung (bound ${bound} ms)`);
   assert.ok(fontRequested, 'the page never requested the Google Fonts stylesheet, so the hang was not exercised');
-  assert.ok(ms !== null, 'window.__cloud.ready was still false 12 s after navigation while the Google Fonts stylesheet hung');
-  assert.ok(ms <= 10000, `the page took ${ms} ms to draw while the Google Fonts stylesheet hung; expected at most 10000 ms`);
+  assert.ok(ms !== null, `window.__cloud.ready was still false ${WAIT_MS} ms after navigation while the Google Fonts stylesheet hung; with it answered the page drew in ${baseline} ms`);
+  assert.ok(ms <= bound, `the page took ${ms} ms to draw while the Google Fonts stylesheet hung but ${baseline} ms with it answered; it must draw within that plus ${MARGIN_MS} ms (${bound} ms), so a slow font host does not hold it up`);
 });
 
 test('without WebGL2 a message shows and the page never reports ready', async (t) => {

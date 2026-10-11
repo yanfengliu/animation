@@ -2,44 +2,160 @@
 // (docs/learning/defect-register.md): repo tooling must never put the page in a visible browser
 // or hand a local file to the desktop.
 // Bound: a static text scan under SCAN_ROOT (default: the repo root; mutation runs point it at an
-// edited copy) of every .js, .mjs, .cjs, .ts, .mts, .cts, .sh, .ps1, .cmd and .bat file under
-// scripts/, under tests/ and at the root (configs such as a Playwright config), of the scripts in
-// package.json, and of every "command" value (hooks, the status line) in the .claude/settings*.json
-// files that .gitignore does not name, since a hook there runs by itself after each edit.
+// edited copy). It reads only these texts:
+// - .js, .mjs, .cjs, .ts, .mts, .cts, .sh, .ps1, .cmd and .bat files under scripts/, under tests/
+//   and at the root (configs such as a Playwright config); files of any other type there (a .py
+//   script, say) are never read;
+// - the scripts in package.json, and every "command" value (hooks, the status line) in the
+//   .claude/settings*.json files that .gitignore does not name, since a hook there runs by itself
+//   after each edit;
+// - every repo file that one of those commands, or a scanned shell file, names by its path
+//   (bash .claude/hooks/after-edit.sh, node tools/x.mjs, also after $CLAUDE_PROJECT_DIR, ${VAR},
+//   %VAR% or $env:VAR), at any depth, when it has one of the types above, or no extension and a
+//   slash in the name (read as a shell script unless its #! line names node). Files under
+//   node_modules or .git, and outside the scan root, are skipped.
+// Comments are blanked before matching: // and /* */ (and a first #! line) in code files; # (and
+// <# #> in PowerShell) where a word starts, outside quotes, in shell files; REM and :: lines in
+// .cmd and .bat files. npm scripts and settings commands keep any #, since cmd.exe, which runs npm
+// scripts on Windows, has no # comment.
 // Proves, for that text:
 // - every call of a browser type's launch methods passes headless set literally to true, with no
 //   spread, no call building the options and no channel, and nothing reaches those methods other
 //   than by calling them directly;
 // - nothing names a system browser binary, a desktop opener, an opener package or a live-reload
 //   server, a process package the child-process check cannot follow, an attach to an already
-//   running browser, Playwright's headed, debug, UI, inspector, code generator, open or report
-//   modes, or a page pause (a pause on a Node stream such as stdin is allowed); no Playwright
-//   config picks a browser channel; no shell command (npm script, shell file, settings command)
-//   starts with an opener, also after a separator, a quote or a shell's command switch;
-// - a file that builds a file: URL (a path-to-URL conversion, a quoted file: string, or
-//   import.meta's url or resolve anywhere but inside fileURLToPath) imports Playwright, and no
-//   command contains one;
-// - the child-process module is reached only through import or require forms the scan reads
-//   (default, namespace, named, renamed or destructured), each binding from it is used only by a
-//   direct call, and those calls start only Node (exec never; execFile and spawn only with
-//   process.execPath).
+//   running browser, or Playwright's headed, debug, UI, inspector, code generator, open or report
+//   modes (also through a version-pinned playwright@<version>); no Playwright config picks a
+//   browser channel;
+// - nothing pauses a receiver that can be a page: one whose chain names "page" (page.x,
+//   this.page, newPage(), pages()[0]) or uses a name the same file binds from newPage, pages() or
+//   waitForEvent. Pauses on sockets, requests, streams, media and animations pass;
+// - no shell command (npm script, shell file, settings command) runs an opener where a command
+//   starts: at a line start, after ; & | ( or a backtick, or after a shell's command switch
+//   (cmd /c or /k, sh -c or a combined switch such as -lc, PowerShell -Command). The command word
+//   may be quoted there; a quote anywhere else is text (echo "open tasks: 3");
+// - a file or command that builds a file: URL (a path-to-URL conversion, a quoted file: string, or
+//   import.meta's url or resolve anywhere but inside fileURLToPath) imports Playwright;
+// - the child-process module, in files and in commands (node -e), is reached only through import
+//   or require forms the scan reads (default, namespace, named, renamed or destructured), each
+//   binding from it is used only by a direct call, and those calls start only Node (exec never;
+//   execFile and spawn only with process.execPath).
+// Known false positives: a pause on a receiver that is not a page but whose chain names "page"
+// (pageStream, a call with a page argument); a program's own -c switch before a quoted opener word
+// (git commit -c "start ..."); a launch method's name or the child-process module's name inside a
+// string.
 // Blind spots: code assembled at run time (eval, new Function, strings or names built from pieces,
-// computed keys such as cp['exec'], a launch method reached by destructuring or a computed key);
-// programs that open a browser by default but are not named here; files outside the scanned
-// paths (docs/, tmp/, node_modules and its install scripts, git hooks, ~/.claude, settings files
-// .gitignore names, agents' scratch scripts outside the repo); and the desktop app's own browser
-// pane, which opened the file in the original incident and has no repo-side gate.
+// computed keys such as cp['exec'], a launch method reached by destructuring or a computed key); a
+// page under a name without "page" that the file does not bind itself (a parameter called tab);
+// programs that open a browser by default but are not named here; files of other types; repo files
+// outside the scanned folders that only code names (a path passed to a Node child process); files
+// outside the scanned paths that no command names (docs/, tmp/, node_modules and its install
+// scripts, git hooks, ~/.claude, settings files .gitignore names, agents' scratch scripts outside
+// the repo); and the desktop app's own browser pane, which opened the file in the original
+// incident and has no repo-side gate.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ROOT = path.resolve(REPO, process.env.SCAN_ROOT || '.');
 const CODE = /\.(m?js|cjs|m?ts|cts|sh|ps1|cmd|bat)$/i;
-const SHELL = /\.(sh|ps1|cmd|bat)$/i;
 const read = (p) => readFileSync(p, 'utf8');
+const rel = (p) => path.relative(ROOT, p).replace(/\\/g, '/');
+const lineOf = (text, i) => text.slice(0, i).split('\n').length;
+
+// Comment finders return [start, end) ranges; blank() turns them into spaces and keeps line
+// breaks, so match positions and line numbers stay those of the file.
+function blank(text, ranges) {
+  if (!ranges.length) return text;
+  const out = text.split('');
+  for (const [a, b] of ranges) for (let k = a; k < b; k++) if (out[k] !== '\n' && out[k] !== '\r') out[k] = ' ';
+  return out.join('');
+}
+// JavaScript and TypeScript: // and /* */ outside strings, templates and regular expressions. A
+// slash starts a regular expression unless it follows a value (a name, a number, a string, ) or ]).
+const REGEX_AFTER = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await']);
+function jsComments(text) {
+  const n = text.length, ranges = [], depth = [];   // depth: braces open inside each template ${ }
+  let i = 0, regexOk = true;
+  if (text.startsWith('#!')) { i = text.indexOf('\n'); if (i < 0) i = n; ranges.push([0, i]); }
+  // Reads template text from j to its closing backtick or its next ${, and says which it reached.
+  const template = (j) => {
+    for (; j < n; j++) {
+      if (text[j] === '\\') j++;
+      else if (text[j] === '`') return [j + 1, false];
+      else if (text[j] === '$' && text[j + 1] === '{') { depth.push(0); return [j + 2, true]; }
+    }
+    return [n, false];
+  };
+  while (i < n) {
+    const c = text[i];
+    if (c === '/' && text[i + 1] === '/') { const e = text.indexOf('\n', i); ranges.push([i, e < 0 ? n : e]); i = e < 0 ? n : e; continue; }
+    if (c === '/' && text[i + 1] === '*') { const e = text.indexOf('*/', i + 2); const end = e < 0 ? n : e + 2; ranges.push([i, end]); i = end; continue; }
+    if (/\s/.test(c)) { i++; continue; }
+    if (c === "'" || c === '"') {
+      let j = i + 1;
+      while (j < n && text[j] !== c && text[j] !== '\n') j += text[j] === '\\' ? 2 : 1;
+      i = j + 1; regexOk = false; continue;
+    }
+    if (c === '`' || (c === '}' && depth.length && depth[depth.length - 1] === 0)) {
+      if (c === '}') depth.pop();
+      [i, regexOk] = template(i + 1);
+      continue;
+    }
+    if (c === '{' || c === '}') { if (depth.length) depth[depth.length - 1] += c === '{' ? 1 : -1; i++; regexOk = true; continue; }
+    if (c === '/' && regexOk) {
+      let j = i + 1, cls = false;
+      for (; j < n && text[j] !== '\n'; j++) {
+        if (text[j] === '\\') j++;
+        else if (cls) cls = text[j] !== ']';
+        else if (text[j] === '[') cls = true;
+        else if (text[j] === '/') break;
+      }
+      if (text[j] === '/') { i = j + 1; while (/[a-z]/i.test(text[i] ?? '')) i++; regexOk = false; continue; }
+    }
+    if (/[\w$]/.test(c)) {
+      let j = i;
+      while (j < n && /[\w$]/.test(text[j])) j++;
+      regexOk = REGEX_AFTER.has(text.slice(i, j));
+      i = j; continue;
+    }
+    regexOk = c !== ')' && c !== ']';
+    i++;
+  }
+  return ranges;
+}
+// Shell and PowerShell: # where a word starts, outside quotes, and <# #> blocks in PowerShell.
+function shellComments(text, ps) {
+  const ranges = [], esc = ps ? '`' : '\\';
+  let quote = null;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === esc && quote !== "'") { i++; continue; }
+    if (quote) { if (c === quote) quote = null; continue; }
+    if (c === "'" || c === '"') { quote = c; continue; }
+    const block = ps && c === '<' && text[i + 1] === '#';
+    if (block || (c === '#' && (i === 0 || /[\s;&|(]/.test(text[i - 1])))) {
+      const e = block ? text.indexOf('#>', i + 2) : text.indexOf('\n', i);
+      const end = e < 0 ? text.length : block ? e + 2 : e;
+      ranges.push([i, end]);
+      i = end - 1;
+    }
+  }
+  return ranges;
+}
+// cmd.exe: REM and :: lines.
+const cmdComments = (text) => [...text.matchAll(/^[ \t@]*(?:rem\b|::)[^\n]*/gim)].map((m) => [m.index, m.index + m[0].length]);
+
+// One scanned file: its text with comments blanked, and whether it is a shell script.
+function source(p) {
+  const raw = read(p), ext = path.extname(p).toLowerCase();
+  const kind = ext === '.ps1' ? 'ps1' : ext === '.cmd' || ext === '.bat' ? 'cmd' : ext === '.sh' || (!ext && !/^#!.*\bnode\b/.test(raw)) ? 'sh' : 'js';
+  const ranges = kind === 'js' ? jsComments(raw) : kind === 'cmd' ? cmdComments(raw) : shellComments(raw, kind === 'ps1');
+  return { file: rel(p), text: blank(raw, ranges), shell: kind !== 'js' };
+}
 
 function walk(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
@@ -48,10 +164,8 @@ function walk(dir) {
     return CODE.test(d.name) ? [p] : [];
   });
 }
-const rel = (p) => path.relative(ROOT, p).replace(/\\/g, '/');
 const rootFiles = readdirSync(ROOT, { withFileTypes: true }).filter((d) => d.isFile() && CODE.test(d.name)).map((d) => path.join(ROOT, d.name));
-const sources = [...['scripts', 'tests'].flatMap((d) => (existsSync(path.join(ROOT, d)) ? walk(path.join(ROOT, d)) : [])), ...rootFiles]
-  .map((p) => ({ file: rel(p), text: read(p), shell: SHELL.test(p) }));
+const sources = [...['scripts', 'tests'].flatMap((d) => (existsSync(path.join(ROOT, d)) ? walk(path.join(ROOT, d)) : [])), ...rootFiles].map(source);
 const pkg = JSON.parse(read(path.join(ROOT, 'package.json')));
 const npmScripts = Object.entries(pkg.scripts ?? {}).map(([k, v]) => ({ file: `package.json scripts.${k}`, text: String(v), shell: true }));
 
@@ -76,7 +190,41 @@ for (const name of settingsFiles) {
   try { collect(JSON.parse(read(path.join(settingsDir, name))), ''); } catch (err) { settingsErrors.push(`.claude/${name}: ${err.message}`); }
 }
 const commands = [...npmScripts, ...settingsCommands];
-const lineOf = (text, i) => text.slice(0, i).split('\n').length;
+
+// Repo files that a command or a shell file names by path: its words, once quotes and environment
+// variables are dropped, resolved from the scan root and from the naming file's own folder. A word
+// counts when it has a scanned type, or no extension and a slash (a hook script such as
+// .claude/hooks/after-edit).
+function namedFiles(text, dirs) {
+  const found = [];
+  for (const word of text.replace(/\$\{?\w+\}?|%\w+%|\$env:\w+/gi, '').split(/[\s'"\x60;&|()<>,=]+/)) {
+    const w = word.replace(/\\/g, '/');
+    if (!w || /^[a-z][\w+.-]+:/i.test(w) || (path.extname(w) ? !CODE.test(w) : !w.includes('/'))) continue;
+    for (const dir of dirs) {
+      const p = w.startsWith('/') ? path.join(dir, w) : path.resolve(dir, w);
+      const r = path.relative(ROOT, p);
+      if (r.startsWith('..') || path.isAbsolute(r) || r.split(path.sep).some((s) => s === 'node_modules' || s === '.git')) continue;
+      if (existsSync(p) && statSync(p).isFile()) found.push(p);
+    }
+  }
+  return found;
+}
+const named = [];
+{
+  const seen = new Set(sources.map((s) => path.resolve(ROOT, s.file)));
+  const queue = [...commands.map((c) => [c.text, [ROOT]]), ...sources.filter((s) => s.shell).map((s) => [s.text, [ROOT, path.dirname(path.resolve(ROOT, s.file))]])];
+  while (queue.length) {
+    const [text, dirs] = queue.shift();
+    for (const p of namedFiles(text, dirs)) {
+      if (seen.has(p)) continue;
+      seen.add(p);
+      const s = source(p);
+      sources.push(s);
+      named.push(s.file);
+      if (s.shell) queue.push([s.text, [ROOT, path.dirname(p)]]);
+    }
+  }
+}
 
 // The argument text of the call whose opening parenthesis is at `open`, skipping quoted strings.
 function callArgs(text, open) {
@@ -94,7 +242,7 @@ function callArgs(text, open) {
 const spans = (text, re) => [...text.matchAll(re)].map((m) => { const open = m.index + m[0].length - 1; return [open, callArgs(text, open).end]; });
 const nextChar = (text, i) => { const k = text.slice(i).search(/\S/); return k < 0 ? text.length : i + k; };
 
-// The patterns below are written so that this file's own text does not match them.
+// The patterns below are written so that this file's own code does not match them.
 const LAUNCH = /\.\s*(launch(?:PersistentContext|Server)?)\b/g;
 const PW_IMPORT = /\bfrom\s*['"](?:playwright(?:-core)?|@playwright\/test)['"]|\brequire\s*\(\s*['"](?:playwright(?:-core)?|@playwright\/test)['"]\s*\)/;
 const isPlaywrightConfig = (file, text) => /(?:^|\/)playwright(?:-ct)?\.config\.[cm]?[jt]s$/.test(file) || /['"]@playwright\/test['"]/.test(text);
@@ -106,7 +254,7 @@ const BANNED = [
   [/\bPW[D]EBUG\b/, "Playwright's debug mode, which opens the inspector"],
   [/\bdevtools\s*:\s*true/, 'devtools, which needs a visible browser'],
   [/\bshow-(?:report|trace)\b|\bcode[g]en\b|\bopen\s*:\s*['"](?:always|on-failure)['"]/, 'a Playwright command or reporter option that opens a window'],
-  [/\bplaywright(?:\.cmd)?\s+(?:open|cr|ff|wk)\b/, 'a Playwright command that opens a page in a visible browser'],
+  [/(?:\bplaywright(?:-core)?|@playwright\/test)(?:@[^\s'"]+)?(?:\.cmd)?\s+(?:open|cr|ff|wk)\b/, 'a Playwright command that opens a page in a visible browser'],
   [/\bconnectOver[C]DP\b/, 'an attach to an already running browser, which may be visible'],
   [/\b(?:msedge|chrome|firefox|iexplore|explorer|opera|brave|safari)\.exe\b/i, 'a system browser or shell binary'],
   [/\bxdg[-]open\b|\bstart[-]process\b|\binvoke[-]item\b|\brun[d]ll32\b|\burl\.dll\b|\bopen[E]xternal\b/i, 'a desktop opener'],
@@ -116,14 +264,39 @@ const BANNED = [
   [/(?:\bfrom\s*|\brequire\s*\(\s*|\bimport\s*\(\s*)['"](?:open|opn)['"]/, 'an opener package'],
   [/(?:\bfrom\s*|\brequire\s*\(\s*|\bimport\s*\(\s*)['"](?:execa|cross-spawn|shelljs|zx|node-pty)(?:\/[\w./-]*)?['"]/, 'a process package, which the child-process check cannot follow'],
 ];
-// A pause call opens Playwright's inspector. Node streams have a pause method too, so a receiver
-// whose last name is stdin, stdout, stderr, a stream or a readline interface is allowed.
-const PAUSE = /(\w*)\s*\.\s*pause\s*\(/g;
-const STREAM = /^(?:stdin|stdout|stderr|\w*[Ss]tream|rl|readline)$/;
-// In shell commands: an opener at the start of a command, after a separator, a quote or a shell's
-// command switch (cmd /c, sh -c, PowerShell -Command).
-const CMD_START = String.raw`(?:^|[;&|(\x60'"]|\s(?:\/[ck]|-c|-Command)\s)\s*`;
-const SHELL_OPENER = new RegExp(CMD_START + String.raw`(?:start|open|xdg[-]open|explorer|invoke[-]item|ii|start[-]process|saps)(?:\.exe)?\s+\S`, 'im');
+// A pause call on a page opens Playwright's inspector. Sockets, requests, streams, media elements
+// and animations have a pause method too, so a pause counts only when its receiver can be a page:
+// its chain names "page", or it uses a name the same file binds from newPage, pages() or
+// waitForEvent.
+const PAUSE = /\??\.\s*pa[u]se\s*(?:\?\.\s*)?\(/g;
+const PAGE_BINDING = /\b(?:const|let|var)\s+([\w$]+)\s*=[^;\n]*?\b(?:newPage|pages|waitForEvent)\s*\(/g;
+// The receiver chain that ends at `end`, read backwards through names, dots and the bracketed
+// groups of calls and indexes: "this.page", "context.pages()[0]", "(await context.newPage())".
+function receiver(text, end) {
+  let i = end;
+  const space = () => { while (i > 0 && /\s/.test(text[i - 1])) i--; };
+  space();
+  const stop = i;
+  for (;;) {
+    const c = text[i - 1] ?? '';
+    if (c === ')' || c === ']') {
+      const open = c === ')' ? '(' : '[';
+      for (let d = 0; i > 0;) { const x = text[--i]; if (x === c) d++; else if (x === open && --d === 0) break; }
+      space();
+      if (/[\w$)\]]/.test(text[i - 1] ?? '')) continue;   // the group is a call or an index
+    } else if (/[\w$]/.test(c)) {
+      while (i > 0 && /[\w$]/.test(text[i - 1])) i--;
+      space();
+      if (text[i - 1] === '.') { i -= text[i - 2] === '?' ? 2 : 1; space(); continue; }
+    }
+    return text.slice(i, stop);
+  }
+}
+// In shell commands an opener counts where a command starts: at a line start, after ; & | ( or a
+// backtick, or after a shell's command switch (cmd /c or /k, sh -c or -lc, PowerShell -Command).
+// The command word may be quoted there; anywhere else a quote is just text.
+const CMD_START = String.raw`(?:^|[;&|(\x60]|\s(?:\/[ck]|-[a-z]*c|-command)\s)\s*['"]?\s*`;
+const SHELL_OPENER = new RegExp(CMD_START + String.raw`(?:start|open|xdg[-]open|explorer|invoke[-]item|ii|start[-]process|saps)(?:\.exe)?['"]?\s+\S`, 'im');
 
 test('every browser launch in the scanned tooling passes a literal headless: true', () => {
   const launches = [], bad = [];
@@ -153,8 +326,10 @@ test('nothing opens a system browser, the desktop, or a visible Playwright mode'
       const m = re.exec(text);
       if (m) hits.push(`${file}:${lineOf(text, m.index)} ${what}: ${JSON.stringify(m[0])}`);
     }
+    const pageNames = new Set([...text.matchAll(PAGE_BINDING)].map((b) => b[1]));
     for (const m of text.matchAll(PAUSE)) {
-      if (!STREAM.test(m[1])) hits.push(`${file}:${lineOf(text, m.index)} a pause call, which opens Playwright's inspector: ${JSON.stringify(m[0])}`);
+      const chain = receiver(text, m.index);
+      if (/page/i.test(chain) || [...chain.matchAll(/[\w$]+/g)].some(([w]) => pageNames.has(w))) hits.push(`${file}:${lineOf(text, m.index)} a pause on ${JSON.stringify(chain)}, which can be a page, and a page pause opens Playwright's inspector`);
     }
     if (isPlaywrightConfig(file, text)) {
       const m = /\bchannel\s*:/.exec(text);
@@ -162,10 +337,10 @@ test('nothing opens a system browser, the desktop, or a visible Playwright mode'
     }
     if (shell) {
       const m = SHELL_OPENER.exec(text);
-      if (m) hits.push(`${file}:${lineOf(text, m.index)} a shell command that opens its argument: ${JSON.stringify(m[0].trim())}`);
+      if (m) hits.push(`${file}:${lineOf(text, m.index + m[0].length - m[0].trimStart().length)} a shell command that opens its argument: ${JSON.stringify(m[0].trim())}`);
     }
   }
-  t.diagnostic(`scanned ${sources.length} files, ${npmScripts.length} npm scripts and ${settingsCommands.length} settings commands (${settingsFiles.length ? settingsFiles.map((n) => '.claude/' + n).join(', ') : 'no unignored .claude/settings*.json'})`);
+  t.diagnostic(`scanned ${sources.length} files (${named.length ? `named by commands: ${named.join(', ')}` : 'none named by commands outside those folders'}), ${npmScripts.length} npm scripts and ${settingsCommands.length} settings commands (${settingsFiles.length ? settingsFiles.map((n) => '.claude/' + n).join(', ') : 'no unignored .claude/settings*.json'})`);
   assert.ok(npmScripts.length > 0, 'package.json has no scripts, so the scan of npm scripts did not run');
   assert.deepEqual(hits, [], 'tooling that can open a visible window');
 });
@@ -192,7 +367,7 @@ test('child processes, if any, start only Node', () => {
   const IMPORT_CJS = new RegExp(String.raw`\b(?:const|let|var)\s+(?:(\w+)|\{([^}]*)\})\s*=\s*(?:await\s+import|require)\s*\(\s*` + CP + String.raw`\s*\)`, 'g');
   const IMPORT_BARE = new RegExp(String.raw`\bimport\s*` + CP, 'g');
   const SPAWNERS = new Set(['exec', 'execSync', 'execFile', 'execFileSync', 'spawn', 'spawnSync']);
-  for (const { file, text } of sources) {
+  for (const { file, text } of [...sources, ...commands]) {
     const tokens = [...text.matchAll(/\bchild[_]process\b/g)].map((m) => m.index);
     if (!tokens.length) continue;
     const ns = new Set(), fns = new Map(), covered = [];
