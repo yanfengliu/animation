@@ -63,7 +63,14 @@ Dependencies: the gates build on the page contract below. The canon sync can fil
     - At E: 1280×800 t7.3 and 390×844 t0, both legible.
     - Off-angle: az+8 and el+25, both a plain cloud.
     - Own shots: δ 2.9°, two rows of gold sparkles; δ 4.9°, nothing.
-  - The cue therefore spans only about ±4°, so finding E by hand is luck. Follow-up, in progress: a gentle cue from about 15° out, with ≥25° unchanged.
+  - The cue therefore spans only about ±4°, so finding E by hand is luck.
+  - Follow-up `76bc0d6`, accepted:
+    - `hint` = 1 − smoothstep(12°, 22°, δ) drives warmth and gain, and is exactly 0 from 22° outward.
+    - Lock (0.8°–6°) is unchanged, and the snap radius is 6°.
+    - The E render is byte-identical to before, and the 25° shots are unchanged.
+    - Stroke/gap ratio: about 1.2 at ±8° (the cue); 1.07–1.11 from 25° out.
+    - Coordinator looked at δ 9.7°: faint gold sparks in two loose bands, not legible.
+  - Merged into the integration branch as `891558f`. Review round 0 of the page started on that revision.
 - [ ] W3 gates (started alongside the W2 follow-up, on top of W2's branch): Playwright suite through real input, each gate proved red, AGENTS.md Gates, defect-register entry for the owner-reported save prompt.
 - [ ] W4 review (read-only, after integration): independent review against these criteria.
 - [ ] Coordinator: integrate, look at the result at native resolution, merge, push, publish, devlog.
