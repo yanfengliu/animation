@@ -90,7 +90,7 @@ const BETA = 0.2;                                  // peak chance that a particl
 const TEXT_SCALE = 2.65;                           // world units per x-height on the text plane
 const SWELL = 0.8;                                 // bob along sight lines from E, world units
 const DRAG_RATE = 0.004;                           // radians per CSS pixel
-const SNAP_DEG = 4.5, SNAP_MS = 900, GLIDE_MS = 2200, TOUR_IDLE_MS = 7000;
+const SNAP_DEG = 6, SNAP_MS = 900, GLIDE_MS = 2200, TOUR_IDLE_MS = 7000;
 
 const params = new URLSearchParams(location.search);
 const numParam = (k) => {
@@ -471,8 +471,10 @@ void main() {
   float fade = mix(1.0, 0.55, smoothstep(u_focus - 8.0, u_focus + 14.0, depth));
   float level = 0.46 * (0.5 + fract(a_seed.y * 13.37));
   vec3 col = u_pal[code & 3];
-  col = mix(col, u_pal[4], text * (0.3 * u_hint * u_hint + 0.7 * u_lock));
-  float gain = text > 0.5 ? 1.0 + 1.0 * u_lock : 1.0 - 0.35 * u_lock;
+  // Approach cue: inside about 20° text particles warm and brighten (hint, full by 12°), so the
+  // two lines show as gold bands that tighten as the smear shrinks; lock adds focus, size and glow.
+  col = mix(col, u_pal[4], text * u_hint);
+  float gain = text > 0.5 ? 1.0 + u_hint : 1.0 - 0.35 * u_lock;
   v_col = col * (level * tw * fade * gain * energy);
   v_quad = quad; v_core = core; v_disc = disc; v_blur = coc / disc;
   v_halo = 0.08 + 0.14 * u_lock * text;                   // aligned text glows into strokes
@@ -614,7 +616,7 @@ function draw() {
   gl.uniform1f(u.u_ppu, h / 2 / th);
   gl.uniform1f(u.u_aperture, 0.22);
   gl.uniform1f(u.u_focus, R);
-  gl.uniform1f(u.u_hint, 1 - smoothstep(3, 28, delta));
+  gl.uniform1f(u.u_hint, 1 - smoothstep(12, 22, delta));  // exactly zero beyond 22°: text looks ambient
   gl.uniform1f(u.u_lock, 1 - smoothstep(0.8, 6, delta));
   gl.uniform1f(u.u_minPx, 1.5);
   gl.uniform1f(u.u_maxPx, Math.min(glr.maxPoint, 160 * ratio));
