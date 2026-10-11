@@ -85,9 +85,11 @@ Dependencies: the gates build on the page contract below. The canon sync can fil
   - Off-angle: az+25, el−25, az−60, back, top and two random angles are plain clouds.
   - Hashes are in `tmp/shots` (ignored). E t7.3 is `8ec38e45…`, byte-identical to W2's shot.
 - [x] Review round 1 on `d34555d`: no critical findings, one major (the mutation tool counts any failure as a kill and has no control run), nine minor, all accepted. Record: [reviews/1_integration.md](reviews/1_integration.md).
-- [ ] W5 (page and shoot tool, on `main`): F13, F16, F17 and the `shoot.mjs` part of F18.
-- [ ] W6 (gates and docs, on `main`, after W5): F9–F12, F14, F15, the AGENTS.md part of F18, and the full mutation proof re-run.
-- [ ] Review round 2: a focused re-review of the repair diff.
+- [x] W5 `22cdf3e`: F13, F16, F17 and the shoot comment.
+- [x] W6 `37cce18`: F9–F18 gates and docs. 35 tests pass in 46.5 s; mutation proof control green, 44 killed, 0 survived, 0 errored (28 min).
+- [x] `main` pushed at `37cce18`; page published as a private artifact: https://claude.ai/artifact/DXryp6rehkTohF7Eumat5f
+- [x] Review round 2 on `37cce18`: one major and three minor findings (F19–F22), all in gates and tooling, not the page. Record: [reviews/2_implementation.md](reviews/2_implementation.md).
+- [ ] Next session: repair F19–F22, re-run the affected mutants and `npm test`, run a focused review round 3, then the devlog (`docs/devlog/summary.md`), a `docs/learning/lessons.md` entry for the ungated β/row-streak finding, and the Outcome section. The session stopped at the owner's usage limit.
 - [ ] Review round 1 (read-only, after integration): an independent review of the integrated revision, covering the gates and the round-0 repairs.
 - [ ] Coordinator: integrate, look at the result at native resolution, merge, push, publish, devlog.
 
