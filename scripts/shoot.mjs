@@ -42,6 +42,16 @@ function parseView(spec) {
   return v;
 }
 function fail(msg) { console.error('shoot: ' + msg); process.exit(2); }
+// Numeric view values must be finite: a typo such as az=3o would otherwise render the default view.
+function checkView(v) {
+  for (const k of ['az', 'el', 'fov', 't', 'dpr', 'wait']) {
+    const val = v[k] ?? (k === 't' || k === 'dpr' ? opts[k] : undefined);
+    if (val === undefined || (k === 't' && val === 'live')) continue;
+    if (String(val).trim() === '' || !Number.isFinite(Number(val))) fail(`view ${JSON.stringify(v)}: ${k}=${val} is not a finite number`);
+  }
+  if (v.viewport !== undefined && !/^\d+x\d+$/.test(v.viewport)) fail(`view ${JSON.stringify(v)}: viewport=${v.viewport} is not WxH`);
+  if (v.clip !== undefined && v.clip.split(':').map(Number).filter(Number.isFinite).length !== 4) fail(`view ${JSON.stringify(v)}: clip=${v.clip} is not X:Y:W:H`);
+}
 
 // Fixed view sets for the acceptance checks. Random angles come from a fixed seed and stay
 // at least 25 degrees from E, so the set is the same on every run.
@@ -57,8 +67,14 @@ function preset(name) {
   }
   magic.push(at(0, 0, { layer: 'text', name: 'magic_1280_textlayer' }));
   const off = [];
+  // Elevation +56 is the top of the range (el 70); text particles drift differently from ambient
+  // ones, so the near views also run at particle times 7.3 and 31.
   for (const d of [8, -8, 25, -25, 60, -60]) off.push(at(d, 0, { name: `off_az${d > 0 ? '+' : ''}${d}` }));
-  for (const d of [8, -8, 25, -25, 60, -60]) off.push(at(0, d, { name: `off_el${d > 0 ? '+' : ''}${d}` }));
+  for (const d of [8, -8, 25, -25, 56, -60]) off.push(at(0, d, { name: `off_el${d > 0 ? '+' : ''}${d}` }));
+  for (const d of [8, -8, 25, -25]) for (const t of ['7.3', '31']) {
+    off.push(at(d, 0, { t, name: `off_az${d > 0 ? '+' : ''}${d}_t${t}` }));
+    off.push(at(0, d, { t, name: `off_el${d > 0 ? '+' : ''}${d}_t${t}` }));
+  }
   off.push({ az: String(MAGIC.az + 180), el: String(-MAGIC.el), name: 'off_back' });
   off.push({ az: String(MAGIC.az + 90), el: '70', name: 'off_top' });   // el+60 already covers az of E at el 70
   off.push(at(25, 0, { layer: 'text', name: 'off_az+25_textlayer' }));
@@ -81,6 +97,7 @@ function preset(name) {
 }
 
 if (opts.preset) views.push(...preset(opts.preset));
+for (const v of views) checkView(v);
 if (!views.length) fail('no views; pass key=value views or --preset=magic|off|all (see the header of scripts/shoot.mjs)');
 
 const outDir = path.resolve(root, opts.out);
@@ -137,7 +154,7 @@ async function shoot(v) {
   const state = await page.evaluate(() => ({ view: window.__cloud.view(), align: window.__cloud.alignment(), mode: window.__cloud.mode(), counts: window.__cloud.counts }));
   const wrap = (d) => ((d % 360) + 540) % 360 - 180;
   if (v.az !== undefined && Math.abs(wrap(state.view.az - Number(v.az))) > 0.01) problems.push(`az did not take: asked ${v.az}, page reports ${state.view.az}`);
-  if (v.el !== undefined && Math.abs(state.view.el - Math.max(-70, Math.min(70, Number(v.el)))) > 0.01) problems.push(`el did not take: asked ${v.el}, page reports ${state.view.el}`);
+  if (v.el !== undefined && Math.abs(state.view.el - Number(v.el)) > 0.01) problems.push(`el did not take: asked ${v.el}, page reports ${state.view.el}${Math.abs(Number(v.el)) > 70 ? ' (the page clamps elevation to ±70)' : ''}`);
   if (v.fov !== undefined && Math.abs(state.view.fov - Number(v.fov)) > 0.05) problems.push(`fov did not take: asked ${v.fov}, page reports ${state.view.fov.toFixed(2)} (zoom limits?)`);
   const name = v.name || ['shot', `${vw}x${vh}@${dpr}`, `az${v.az ?? 'def'}`, `el${v.el ?? 'def'}`, v.fov && `fov${v.fov}`, `t${t}`, v.layer].filter(Boolean).join('_');
   const file = path.join(outDir, name + '.png');

@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Anamorphic Cloud</title>
 <meta name="description" content="A drifting cloud of glowing particles that spells hello world from one hidden point of view.">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&amp;family=Instrument+Serif:ital@1&amp;display=swap">
 <style>
   :root {
     color-scheme: dark;
@@ -34,6 +33,7 @@
   body { background: var(--bg); color: var(--ink); overflow: hidden; font-family: var(--font-mono); -webkit-font-smoothing: antialiased; }
   #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
   #scene.grabbing { cursor: grabbing; }
+  #scene:focus-visible { outline: 2px solid var(--focus); outline-offset: -4px; }
   .bar {
     position: fixed; display: flex; align-items: center; justify-content: space-between; gap: 12px; pointer-events: none;
     top: max(14px, env(safe-area-inset-top));
@@ -64,16 +64,22 @@
 </style>
 </head>
 <body>
-<canvas id="scene" role="img" aria-label="A drifting cloud of glowing particles. From one hidden angle, some of the particles line up to spell hello world. Drag, or use the arrow keys, to change the point of view."></canvas>
+<canvas id="scene" role="img" tabindex="0" aria-label="A drifting cloud of glowing particles. From one hidden angle, some of the particles line up to spell hello world. Drag, or use the arrow keys, to change the point of view."></canvas>
 <div class="bar">
   <div id="readout">AZ 336.0° · EL 6.0°</div>
   <button id="find" type="button">Find the angle</button>
 </div>
-<p id="hint">Drag to change your point of view.</p>
+<p id="hint">Drag, or use the arrow keys, to change your point of view.</p>
 <p id="nogl" hidden>This animation needs WebGL 2, which this browser or device does not provide.</p>
 <script>
 (() => {
 'use strict';
+
+// Optional web fonts, added from script so a slow or blocked font host never holds up the page.
+const fontCss = document.createElement('link');
+fontCss.rel = 'stylesheet';
+fontCss.href = 'https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@1&display=swap';
+document.head.append(fontCss);
 
 // ------------------------------------------------------------------ settings
 // Right-handed, Y up, cloud centred at the origin. The camera orbits at radius R:
@@ -90,7 +96,7 @@ const BETA = 0.2;                                  // peak chance that a particl
 const TEXT_SCALE = 2.65;                           // world units per x-height on the text plane
 const SWELL = 0.8;                                 // bob along sight lines from E, world units
 const DRAG_RATE = 0.004;                           // radians per CSS pixel
-const SNAP_DEG = 6, SNAP_MS = 900, GLIDE_MS = 2200, TOUR_IDLE_MS = 7000;
+const SNAP_DEG = 6, SNAP_MS = 900, GLIDE_MS = 2200;
 
 const params = new URLSearchParams(location.search);
 const numParam = (k) => {
@@ -177,31 +183,41 @@ function buildMask() {
   const x0 = -halfW - pad, y1 = top + pad;
   const W = Math.ceil((2 * halfW + 2 * pad) * PX / CF) * CF;
   const H = Math.ceil((top - bottom + 2 * pad) * PX / CF) * CF;
-  const cv = document.createElement('canvas');
-  cv.width = W; cv.height = H;
-  const g2 = cv.getContext('2d', { willReadFrequently: true });
-  g2.setTransform(PX, 0, 0, -PX, -x0 * PX, y1 * PX);   // x-height units, y up
-  g2.lineWidth = STROKE; g2.lineCap = 'round'; g2.lineJoin = 'round'; g2.strokeStyle = '#fff';
+  // S comes straight from the geometry, so a seed builds the same cloud in every browser: a pixel
+  // is inside when its centre lies within half a stroke of a line or arc (round caps and joins).
+  const S = new Uint8Array(W * H), half = STROKE / 2;
+  const mark = (minX, maxX, minY, maxY, dist) => {
+    const px0 = Math.max(0, Math.floor((minX - half - x0) * PX)), px1 = Math.min(W - 1, Math.ceil((maxX + half - x0) * PX));
+    const py0 = Math.max(0, Math.floor((y1 - maxY - half) * PX)), py1 = Math.min(H - 1, Math.ceil((y1 - minY + half) * PX));
+    for (let py = py0; py <= py1; py++) for (let px = px0; px <= px1; px++) {
+      if (dist(x0 + (px + 0.5) / PX, y1 - (py + 0.5) / PX) <= half) S[py * W + px] = 1;
+    }
+  };
   for (const line of lines) {
     for (const { g, x } of line.items) {
       const ox = x - line.w / 2, oy = line.y;
-      g2.beginPath();
       for (const s of g.d) {
         if (s[0] === 'L') {
-          g2.moveTo(ox + s[1], oy + s[2]);
-          for (let k = 3; k < s.length; k += 2) g2.lineTo(ox + s[k], oy + s[k + 1]);
+          for (let k = 1; k + 3 < s.length; k += 2) {
+            const ax = ox + s[k], ay = oy + s[k + 1], dx = s[k + 2] - s[k], dy = s[k + 3] - s[k + 1];
+            mark(Math.min(ax, ax + dx), Math.max(ax, ax + dx), Math.min(ay, ay + dy), Math.max(ay, ay + dy), (px, py) => {
+              const t = clamp(((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy), 0, 1);
+              return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+            });
+          }
         } else {
-          const [, cx, cy, r, a0, a1] = s;
-          g2.moveTo(ox + cx + r * Math.cos(a0 * DEG), oy + cy + r * Math.sin(a0 * DEG));
-          g2.arc(ox + cx, oy + cy, r, a0 * DEG, a1 * DEG, a1 < a0);
+          const [, c0, c1, r, a0, a1] = s, cx = ox + c0, cy = oy + c1;
+          const start = Math.min(a0, a1), span = Math.abs(a1 - a0);   // degrees, anticlockwise from start
+          const ex = (a) => cx + r * Math.cos(a * DEG), ey = (a) => cy + r * Math.sin(a * DEG);
+          mark(cx - r, cx + r, cy - r, cy + r, (px, py) => {
+            const ang = ((Math.atan2(py - cy, px - cx) / DEG - start) % 360 + 360) % 360;
+            if (span >= 360 || ang <= span) return Math.abs(Math.hypot(px - cx, py - cy) - r);
+            return Math.min(Math.hypot(px - ex(a0), py - ey(a0)), Math.hypot(px - ex(a1), py - ey(a1)));
+          });
         }
       }
-      g2.stroke();
     }
   }
-  const rgba = g2.getImageData(0, 0, W, H).data;
-  const S = new Uint8Array(W * H);
-  for (let i = 0; i < W * H; i++) S[i] = rgba[i * 4 + 3] >= 128 ? 1 : 0;
 
   // B = S blurred by a Gaussian: area-average onto the coarse grid, then three box blurs per axis.
   const BW = W / CF, BH = H / CF;
@@ -403,7 +419,7 @@ Object.defineProperty(window, '__cloud', {
 });
 
 // ------------------------------------------------------------------ WebGL
-const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false });
 const fail = (why) => {
   if (why) console.warn('Anamorphic Cloud: ' + why);
   document.getElementById('nogl').hidden = false;
@@ -655,12 +671,13 @@ function stepAnim(now) {
   return true;
 }
 
-// Idle tour: start → E, hold, wander well away, back to E from another side, repeat.
+// Tour from load until the first input: start → E, hold, wander well away, back to E from
+// another side, repeat. Any input stops it for good; reduced motion never starts it.
 const TOUR = ['E', 'hold', [140, 28], [250, -8], [330, 48], 'E', 'hold', [-60, -16], [-150, 22], [110, 42]];
-function startTour(first) {
+function startTour() {
   mode = 'tour';
   tour = { i: 0 };
-  if (first) beginAnim(null, 1000); else tourStep();
+  beginAnim(null, 1000);
 }
 function tourStep() {
   const s = TOUR[tour.i++ % TOUR.length];
@@ -694,8 +711,8 @@ function stepCamera(now, dt) {
     if (Math.hypot(vel.az, vel.el) < 0.02) settle();
   } else if (anim && (mode === 'tour' || mode === 'glide' || mode === 'snap')) {
     if (stepAnim(now)) { if (mode === 'tour') tourStep(); else mode = 'idle'; }
-  } else if (mode === 'idle' && tourAllowed() && now - lastInput > TOUR_IDLE_MS) {
-    startTour(lastInput === -Infinity);
+  } else if (mode === 'idle' && tourAllowed() && lastInput === -Infinity) {
+    startTour();
   }
 }
 
@@ -712,7 +729,7 @@ canvas.addEventListener('pointerdown', (e) => {
   try { canvas.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   noteInput();
-  if (mode !== 'drag') gestureFrom = alignDeg();
+  gestureFrom = mode === 'drag' ? Math.max(gestureFrom, alignDeg()) : alignDeg();
   stopAuto();
   mode = 'drag';
   samples = [];
@@ -757,23 +774,32 @@ canvas.addEventListener('pointerup', (e) => {
     vel = { az: wrapPi(b.az - a.az) / dt, el: (b.el - a.el) / dt };
     const speed = Math.hypot(vel.az, vel.el), cap = 3;   // rad/s; coasts at most about 50°
     if (speed > cap) { vel.az *= cap / speed; vel.el *= cap / speed; }
-    if (speed > 0.15) { mode = 'inertia'; return; }
+    if (speed > 0.15 && !reduced) { mode = 'inertia'; return; }   // reduced motion: no coast
   }
   settle();
 });
 canvas.addEventListener('pointercancel', (e) => { release(e); if (!pointers.size && mode === 'drag') settle(); });
 canvas.addEventListener('lostpointercapture', (e) => { if (pointers.has(e.pointerId)) { release(e); if (!pointers.size && mode === 'drag') settle(); } });
 
+// Zoom changes only the field of view. A running snap or glide keeps going and carries the new
+// zoom to its end; a tour or a coast stops, as with any other input.
+function zoomBy(f) {
+  cam.zoom = clampZoom(cam.zoom * f);
+  if (anim && anim.target && (mode === 'snap' || mode === 'glide')) { anim.z0 = cam.zoom; anim.dz = 0; anim.target.zoom = cam.zoom; }
+  else if (mode !== 'drag') stopAuto();
+}
 window.addEventListener('wheel', (e) => {
   e.preventDefault();
   const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
   noteInput();
-  if (mode !== 'drag') stopAuto();
-  cam.zoom = clampZoom(cam.zoom * Math.exp(-e.deltaY * unit * 0.0015));
+  zoomBy(Math.exp(-e.deltaY * unit * 0.0015));
 }, { passive: false });
 
 window.addEventListener('keydown', (e) => {
   if (e.altKey || e.ctrlKey || e.metaKey) return;
+  // Keys steer unless a text field has focus; Tab is never handled, so focus order is untouched.
+  const focus = document.activeElement;
+  if (focus && (focus.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(focus.tagName))) return;
   const step = 2 * DEG;
   const keys = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
   const zoomKeys = { '+': 1.12, '=': 1.12, '-': 1 / 1.12, '_': 1 / 1.12 };
@@ -781,8 +807,9 @@ window.addEventListener('keydown', (e) => {
   e.preventDefault();
   noteInput();
   if (mode === 'drag') return;
+  if (e.key in zoomKeys) { zoomBy(zoomKeys[e.key]); return; }
   stopAuto();
-  if (e.key in zoomKeys) { cam.zoom = clampZoom(cam.zoom * zoomKeys[e.key]); return; }
+  hintEl.classList.add('gone');
   gestureFrom = alignDeg();
   // Arrow keys move the viewpoint: right orbits the eye to its right, up raises it.
   cam.az = wrapPi(cam.az + keys[e.key][0]);
