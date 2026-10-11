@@ -10,9 +10,9 @@ The viewer changes the angle by dragging, and an idle camera tour passes through
 
 Non-goals: build steps, frameworks, runtime dependencies, server code.
 
-Stack: plain HTML, CSS and JavaScript on WebGL2. Node 24 (`.nvmrc`, added with the tooling) is for dev tooling only. Playwright (a dev dependency) drives headless Chromium for screenshots and gates.
+Stack: plain HTML, CSS and JavaScript on WebGL2. Node 24 (`.nvmrc`) is for dev tooling only. Playwright (a dev dependency) drives headless Chromium for screenshots and gates.
 
-The page and its tooling are being built now under `docs/work/0_hello-world-cloud/`.
+The design and acceptance record is `docs/work/0_hello-world-cloud/plan.md`.
 
 <!-- FLEET-CANON:BEGIN sha=21892c165855 generated from ../fleet/FLEET.md by `npm run sync-canon` — do not edit inside this block; this repo's own rules go in docs/policies/local-rules.md -->
 ## Fleet constitution
@@ -74,12 +74,27 @@ Obtain independent, preferably read-only review for substantial or high-risk cha
 
 ## Gates
 
-None exist yet. The Playwright suite (`npm test`) lands with work unit 0, and this section names the real commands when it does.
+Node 24 (`.nvmrc`). Each command below was run on Windows 11 with Node 24.18.1 on 2026-10-11.
+
+- `npm ci` installs the one dev dependency, Playwright 1.63.0 (pinned). The gates use that version's Chromium from the local Playwright cache; nothing downloads at test time.
+- `npm test` runs the headless suite, `node --test --test-concurrency=2 tests/*.test.mjs`, in about 50 s. Two files at a time, because SwiftShader WebGL2 is CPU-heavy. `PAGE=<path relative to the repo root>` runs it against another copy of the page.
+- `npm audit --audit-level=high` runs after any dependency change.
+- `npm run shoot -- --preset=all` (or `magic`, `off`, or single views; see the header of `scripts/shoot.mjs`) is the visual instrument. It saves PNGs under `tmp/shots/` and prints each one's sha256 and what the page reports. A visual change still needs someone to look at the shots at native resolution; the gates do not replace that.
+- `node tests/mutate.mjs [name ...]` re-proves the gates. It writes each mutant under `tmp/mutants/`, runs the gates against it, prints the red tests with their assertion lines, and exits 1 if any mutant leaves every gate green. Run it after changing a gate or the page.
+
+What the suite proves (each file's header states its exact bound):
+
+- `tests/illusion.test.mjs`: at E, "hello world" strokes are at least 2× brighter than the gaps between them, at t 0, 7.3 and 31 s, at 1280×800 and 390×844, at fov 32 and 80 (1.8× there), and when canvas readback returns zeros. The stroke shapes are the same for two seeds, so they come from the message, not the particle draw. The text layer holds still over time, and zoom only scales the image. From 25° out (±25° az and el, +60° az, the back) the E strokes are no brighter than the back-view floor + 0.06, the text layer is a smear that changes with the seed, and a text particle carries the light and colour of an ambient one. The same seed builds the same cloud.
+- `tests/controls.test.mjs`: real mouse, wheel, keyboard and CDP touch input on a 640×400 page. Covers drag signs, rate and the ±70° clamp; zoom that changes only the field of view; arrow keys; the "Find the angle" glide and its cancel; snap near E; zooming during a glide or snap; touch drag and pinch, including a pinch at E; the tour (moves at load, stops on a press, stays stopped); coasting; and reduced motion (no tour, no coast, "Find the angle" jumps).
+- `tests/page.test.mjs`: no console or page errors; the only request is the Google Fonts stylesheet, and the page draws within 3 s if it never answers; no horizontal overflow at 390 px; Tab reaches the canvas and then "Find the angle" with focus styles that change pixels on screen; keys work on the focused canvas; the no-WebGL2 message.
+- `tests/hygiene.test.mjs`: a text scan of `scripts/`, `tests/` and the npm scripts. Every Playwright launch is literally `headless: true`. Nothing opens a system browser, a desktop opener or a headed, debug, inspector or report mode. Only Playwright code builds `file:` URLs, and child processes start only Node. This is the gate for the defect in `docs/learning/defect-register.md`.
+
+Bound: one engine, headless Chromium 153 with SwiftShader WebGL2, device pixel ratio 1 for the image gates, and only the listed views, times, seeds and inputs. The image gates measure luminance and shape, not whether a person can read the text. The hygiene scan cannot see code assembled at run time or the desktop app's own browser pane.
 
 ## Invariants & boundaries
 
 - The page stays one self-contained `index.html` that opens straight from disk: no build step, no external scripts, no runtime dependencies. The only external request is the optional Google Fonts stylesheet.
-- Text particles move only along their own sight-line from the secret eye, so their projection from it never changes. Ambient drift stays small, well under the relocation width (σ in the plan), so the total density, and with it the disguise, holds.
+- Text particles move only along their own sight-line from the secret eye, so their projection from it never changes. Ambient drift plus wobble is at most about 0.52 world units. Seen from E that is 0.42σ at the text plane and less beyond it (σ is the relocation width in the plan), but up to about 0.9σ for the nearest particles. So the density that hides the text holds closely at and beyond the plane and only roughly in front of it.
 - Zoom changes the field of view only. The eye stays on the orbit sphere with world-up roll, because moving it breaks the illusion.
 - The test contract changes only together with the gates. Query parameters: `az`, `el`, `fov` (degrees), `t` (freezes the particle clock), `tour=0`, `layer=text|ambient`, `seed`. Read-only `window.__cloud`: `ready`, `frame`, `magic`, `view()`, `alignment()`, `mode()`, `counts`. DOM ids: `#scene`, `#find`, `#readout`, `#hint`.
 - The page doubles as a claude.ai artifact: one deliberate dark theme with colour tokens on `:root`, no `#key=value` hash state, and it works at 390 px wide.
