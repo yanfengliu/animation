@@ -49,7 +49,7 @@ Dependencies: the gates build on the page contract below. The canon sync can fil
 - [ ] Opening `index.html` straight from disk in Chromium shows the animated cloud with no console errors; the only network requests are optional Google Fonts. Checked by a gate and by the coordinator looking.
 - [ ] At the secret viewpoint "hello" above "world" is clearly legible at 1280×800 and 390×844, at particle times 0, 7.3 and 31 s, zoomed in and out. Checked by the coordinator at native resolution, and by a gate measuring stroke contrast.
 - [ ] From off-angles (±8°, ±25° and ±60° in azimuth and in elevation, the back side, top-down and five random angles) no text is legible, and from 25° or more nothing hints at text. Checked by inspecting screenshots, and by a gate showing stroke pixels are no brighter than their surroundings off-angle.
-- [ ] Real input works: mouse drag, touch drag, wheel and pinch zoom (field of view only), arrow keys, "Find the angle", snap near the angle, the tour resuming after idle and stopping on input, and reduced motion. Checked by gates that drive real input events.
+- [ ] Real input works: mouse drag, touch drag, wheel and pinch zoom (field of view only), arrow keys, "Find the angle", snap near the angle, the tour running from load and stopping for good on the first input, and reduced motion. Checked by gates that drive real input events. This criterion was changed by F6 in review round 0; it originally asked for the tour to resume after idle.
 - [ ] `npm test` runs headless, and each gate has been shown to fail with its defect reintroduced.
 - [ ] The page meets the artifact contract: self-contained, colour tokens with an explicit dark theme, works at phone width with no horizontal scroll, visible keyboard focus.
 - [x] The repo is in the fleet: AGENTS.md with the canon block filled by the sync, CLAUDE.md is `@AGENTS.md`, .gitignore, census lists `animation`, and the fleet gate is green apart from items the owner has not decided.
@@ -78,6 +78,16 @@ Dependencies: the gates build on the page contract below. The canon sync can fil
 - [x] W2 repairs `71be0a2`: all seven page findings were fixed and checked through real input. Default counts are now 1,143 text and 16,857 ambient, because the stroke mask comes from glyph geometry.
 - [x] Owner directive, 2026-10-11: work directly on `main` with subagents (recorded in `docs/policies/local-rules.md`). The integration branch was fast-forwarded into `main` (`f0e380d`). The coordinator's, W1's and W2's worktrees and branches are removed. W3 finishes in its worktree, the last one, and is merged next.
 - [x] W3 was cut off by an API session limit (reset 03:50 PDT) partway through its mutation proofs. It resumed at 08:26 with its files intact.
+- [x] W3 gates `1d986c4`, merged as `0370e78`: 30 tests and 30 mutants, none survived. On `d34555d` the coordinator ran `npm test` (30 of 30 pass, 42 s) and `npm audit` (0 vulnerabilities), and the fleet drift test passes.
+- [x] Coordinator visual acceptance on `d34555d`, 16 views shot with `scripts/shoot.mjs` and each opened at native resolution:
+  - At E: t 0, 7.3 and 31; 390×844; fov 32 and 80. All read "hello" over "world".
+  - Approach: az+3 shows scrambled gold rows; az+10 and el+10 show faint gold bands or streaks.
+  - Off-angle: az+25, el−25, az−60, back, top and two random angles are plain clouds.
+  - Hashes are in `tmp/shots` (ignored). E t7.3 is `8ec38e45…`, byte-identical to W2's shot.
+- [x] Review round 1 on `d34555d`: no critical findings, one major (the mutation tool counts any failure as a kill and has no control run), nine minor, all accepted. Record: [reviews/1_integration.md](reviews/1_integration.md).
+- [ ] W5 (page and shoot tool, on `main`): F13, F16, F17 and the `shoot.mjs` part of F18.
+- [ ] W6 (gates and docs, on `main`, after W5): F9–F12, F14, F15, the AGENTS.md part of F18, and the full mutation proof re-run.
+- [ ] Review round 2: a focused re-review of the repair diff.
 - [ ] Review round 1 (read-only, after integration): an independent review of the integrated revision, covering the gates and the round-0 repairs.
 - [ ] Coordinator: integrate, look at the result at native resolution, merge, push, publish, devlog.
 
