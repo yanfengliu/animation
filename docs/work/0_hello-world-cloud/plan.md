@@ -23,6 +23,8 @@ Dependencies: the gates build on the page contract below. The canon sync can fil
 
 **Hidden text by relocation.** Sample a soft, lumpy cloud. For each particle, find where its sight-line from the secret eye E crosses the text plane (through the cloud centre, facing E). Let S be the stroke mask of the two-line text and B the mask blurred by a Gaussian of width σ. With probability β·B(u)/max(B), move the particle sideways onto a stroke point drawn from that same Gaussian around u, keeping its distance from E. Text particles are relocated cloud particles, so the total density is unchanged at scales above σ, which hides the message from other angles. Seen from E, every relocated particle sits on a stroke, and stroke density comes out uniform because the conversion rate and the landing kernel share B.
 
+**β settled at 0.2, not 0.85** (W2, measured). Turning the camera about the vertical axis smears the text sideways only, so the row profile of the text survives at every azimuth; tilting does the same to the column profile. At β 0.85 the rows showed as streaks at ±8° and ±25°: the high-pass row residual against a β 0 render was 1.7–2.5 times the cloud's own profile noise. At β 0.2 it is at most 0.67 everywhere, against a noise floor of about 0.55. With so few text particles (1,104 of 18,000 at the default seed), legibility at E comes mostly from the reveal effects: gain, size, halo and gold. Their positions still come from the relocation, so the letters are geometric.
+
 **Floating without breaking it.** Text particles bob only along their own sight-line from E, so their projection from E never changes. Ambient particles drift in a smooth, small flow field whose amplitude stays well under σ, so the density compensation holds.
 
 **Camera.** Orbit at a fixed radius around the cloud centre with world-up roll. Zoom changes the field of view only, because moving the eye off the orbit sphere would break the illusion. The field of view widens on narrow screens so the text block always fits. Releasing a drag within a few degrees of the secret angle snaps into it. "Find the angle" glides there. An idle tour passes through it, and is off under reduced motion.
@@ -55,8 +57,14 @@ Dependencies: the gates build on the page contract below. The canon sync can fil
 
 - [x] Coordinator: allocate this folder, write the plan and contract, add .gitignore.
 - [x] W1 scaffold (Sonnet, own worktrees): AGENTS.md and CLAUDE.md (animation `110ae97`), canon block rendered with fleet's `canon.mjs` (`f0d4cb5`), census entry (fleet `7e7f1e9`). Coordinator checked: fleet drift and census tests pass with animation current. `met` was onboarded by another session (met `58d7a81`, fleet `22bca33`), so W1 left it alone. No `docs/policies/local-rules.md` yet, because there is no local-only rule.
-- [ ] W2 page (Opus, own worktree): `index.html`, `package.json` and `.nvmrc`, screenshot tool, visual iteration.
-- [ ] W3 gates (after W2): Playwright suite through real input, each gate proved red.
+- [x] W2 page (Opus, own worktree): `index.html`, `package.json` (Playwright 1.63.0, cached Chromium build 1243), `.nvmrc`, `scripts/shoot.mjs`, visual iteration over 34 shots (branch `worktree-agent-a79120c474259d678`, `f91bd5a`).
+  - Deviations, each with evidence in its handoff: β 0.2 (above); an anisotropic main cloud (σ 7.2, 5.6, 7.2) so the outer letters get enough column density; ambient particles share the swell along their own line from E; landing points evened out by six rounds of repulsion inside the mask; no snap when the gesture moved away from E; `el` clamped to ±70°.
+  - Coordinator looked at native resolution:
+    - At E: 1280×800 t7.3 and 390×844 t0, both legible.
+    - Off-angle: az+8 and el+25, both a plain cloud.
+    - Own shots: δ 2.9°, two rows of gold sparkles; δ 4.9°, nothing.
+  - The cue therefore spans only about ±4°, so finding E by hand is luck. Follow-up, in progress: a gentle cue from about 15° out, with ≥25° unchanged.
+- [ ] W3 gates (started alongside the W2 follow-up, on top of W2's branch): Playwright suite through real input, each gate proved red, AGENTS.md Gates, defect-register entry for the owner-reported save prompt.
 - [ ] W4 review (read-only, after integration): independent review against these criteria.
 - [ ] Coordinator: integrate, look at the result at native resolution, merge, push, publish, devlog.
 
