@@ -1,0 +1,7 @@
+node_modules/
+tmp/
+test-results/
+playwright-report/
+.claude/worktrees/
+.claude/settings.local.json
+*.log
