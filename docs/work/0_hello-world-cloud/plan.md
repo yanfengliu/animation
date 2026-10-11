@@ -72,7 +72,8 @@ Dependencies: the gates build on the page contract below. The canon sync can fil
     - Coordinator looked at δ 9.7°: faint gold sparks in two loose bands, not legible.
   - Merged into the integration branch as `891558f`. Review round 0 of the page started on that revision.
 - [ ] W3 gates (started alongside the W2 follow-up, on top of W2's branch): Playwright suite through real input, each gate proved red, AGENTS.md Gates, defect-register entry for the owner-reported save prompt.
-- [ ] W4 review (read-only, after integration): independent review against these criteria.
+- [x] Review round 0 of the page (`891558f`; Claude CLI pinned to `claude-opus-5-5[1m]` at max effort, read-only): no critical or major findings. Nine minor findings were accepted and routed; W2 is repairing the page and W3 is gating the repairs. Record: [reviews/0_implementation.md](reviews/0_implementation.md).
+- [ ] Review round 1 (read-only, after integration): an independent review of the integrated revision, covering the gates and the round-0 repairs.
 - [ ] Coordinator: integrate, look at the result at native resolution, merge, push, publish, devlog.
 
 ## Outcome
