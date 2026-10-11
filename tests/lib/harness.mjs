@@ -6,6 +6,7 @@
 // (aborting it would log a console error); every other http(s) request is aborted and recorded.
 // The harness never writes page state; tests read window.__cloud and drive real input.
 import { chromium } from 'playwright';
+import { AssertionError } from 'node:assert';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -51,13 +52,19 @@ export async function newContext(browser, { width = 1280, height = 800, dpr = 1,
 }
 
 // Opens the page with `query` in a new context; waits for it to draw unless ready is false.
-// waitUntil is passed to page.goto ('commit' when a subresource is meant to hang).
+// waitUntil is passed to page.goto ('commit' when a subresource is meant to hang). The caller
+// closes the context; if opening fails, the context is closed here before the error is thrown.
 export async function openPage(browser, { query = '', ready = true, waitUntil = 'load', ...opts } = {}) {
   const { context, log } = await newContext(browser, opts);
-  const page = await context.newPage();
-  await page.goto(PAGE_URL + (query ? '?' + query : ''), { waitUntil });
-  if (ready) await waitFrames(page);
-  return { context, page, log };
+  try {
+    const page = await context.newPage();
+    await page.goto(PAGE_URL + (query ? '?' + query : ''), { waitUntil });
+    if (ready) await waitFrames(page);
+    return { context, page, log };
+  } catch (err) {
+    await context.close().catch(() => {});
+    throw err;
+  }
 }
 
 // Waits until the page reports ready and has drawn `frames` more frames.
@@ -117,14 +124,17 @@ export async function render(context, query) {
   }
 }
 
-// Polls fn in the page until it returns truthy; returns the elapsed milliseconds.
+// Polls fn in the page until it returns truthy; returns the elapsed milliseconds. A timeout is a
+// failed check, so it throws an AssertionError (tests/mutate.mjs counts only those as kills); any
+// other error (the page closed, fn threw) is passed on unchanged.
 export async function until(page, fn, arg, timeout, what) {
   const t0 = Date.now();
   try {
     await page.waitForFunction(fn, arg, { timeout, polling: 25 });
-  } catch {
+  } catch (err) {
+    if (err?.name !== 'TimeoutError') throw err;
     const s = await state(page);
-    throw new Error(`${what}: not reached within ${timeout} ms; the page reports ${JSON.stringify(s)}`);
+    throw new AssertionError({ message: `${what}: not reached within ${timeout} ms; the page reports ${JSON.stringify(s)}` });
   }
   return Date.now() - t0;
 }

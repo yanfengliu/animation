@@ -147,6 +147,36 @@ export function strokeMask(lum, W, H, { blur = 3, frac = 0.35, region = [0.08, 0
   return { W, H, mask, gap, strokes, gaps, box: { x0, x1, y0, y1 }, threshold: thr, median: med, p995: hi };
 }
 
+// The two lines of text in a stroke mask, split at the longest run of empty rows inside its box
+// (null if there is none). For each line: its x and y extent, and the height of the mask inside
+// strips at its left and right ends, each `stripFrac` of the line's height wide.
+export function lineLayout(m, stripFrac = 0.15) {
+  const { W, mask, box } = m;
+  let best = null, run = null;
+  for (let y = box.y0; y <= box.y1; y++) {
+    let n = 0;
+    for (let x = box.x0; x <= box.x1; x++) n += mask[y * W + x];
+    if (n === 0) run = run ? { a: run.a, b: y } : { a: y, b: y };
+    else if (run) { if (!best || run.b - run.a > best.b - best.a) best = run; run = null; }
+  }
+  if (!best) return null;
+  const extent = (ya, yb, xa, xb) => {
+    let x0 = Infinity, x1 = -1, y0 = Infinity, y1 = -1;
+    for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) {
+      if (!mask[y * W + x]) continue;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    return { x0, x1, y0, y1, width: x1 - x0 + 1, height: y1 - y0 + 1 };
+  };
+  const line = (ya, yb) => {
+    const e = extent(ya, yb, box.x0, box.x1);
+    const strip = Math.max(2, Math.round(stripFrac * e.height));
+    const end = (xa, xb) => { const s = extent(e.y0, e.y1, xa, xb); return s.x1 < 0 ? 0 : s.height; };
+    return { ...e, strip, left: end(e.x0, e.x0 + strip - 1), right: end(e.x1 - strip + 1, e.x1) };
+  };
+  return { gap: best.b - best.a + 1, top: line(box.y0, best.a - 1), bottom: line(best.b + 1, box.y1) };
+}
+
 // Mean luminance of `lum` on the strokes divided by the mean on the gap.
 export function strokeGapRatio(lum, m) {
   if (!m.strokes || !m.gaps) return NaN;

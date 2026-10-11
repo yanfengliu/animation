@@ -4,9 +4,11 @@
 // windows allow at least 1.5× the page's own durations. Proves the listed behaviours: drag
 // direction, rate and elevation clamp, wheel and key zoom changing only the field of view,
 // arrow keys, the "Find the angle" glide and its cancel, snap near E, zooming during a glide or
-// snap, touch drag and pinch (a pinch at E ends at E), the tour (moves at load, stops on a press,
-// stays stopped for 9 s after), coasting after a fling, and reduced motion (no tour, no coast,
-// "Find the angle" jumps).
+// snap (the zoom takes at once and holds when the move lands), touch drag and pinch (a pinch at E
+// ends at E; a pinch after a deliberate 17 px drag away from E stays where the drag left it), the
+// tour (moves at load, stops on a press, stays stopped for the 9 s measured), coasting after a
+// fling, and reduced motion (no tour, no coast in the same page once reduced motion is switched
+// on, "Find the angle" jumps).
 // Does not prove how the motion feels (easing, inertia), other browsers or devices, or
 // behaviour under slow frame rates.
 import test, { before, after } from 'node:test';
@@ -179,28 +181,34 @@ test('the tour moves the camera at load, stops on a press and stays stopped', as
   near(r1.az, r0.az, 0.001, 'az 9 s after the last input'); near(r1.el, r0.el, 0.001, 'el 9 s after the last input');
 });
 
-test('zooming during a glide or a snap does not stop it', async (t) => {
+test('zooming during a glide or a snap takes at once, does not stop it, and holds when it lands', async (t) => {
   const { page } = await open(t, 'az=0&el=0&tour=0');
   await page.click('#find');
   await sleep(700);
   await page.mouse.move(C.x, C.y);
+  const g0 = await state(page);
   await page.mouse.wheel(0, -200);
   await sleep(100);
   const g = await state(page);
   assert.equal(g.mode, 'glide', `a wheel step during the glide left the mode at "${g.mode}"`);
+  assert.ok(g.fov < g0.fov - 5, `a wheel step during the glide moved fov only from ${g0.fov.toFixed(2)} to ${g.fov.toFixed(2)}; it must zoom in at once`);
   await until(page, () => window.__cloud.mode() === 'idle', null, 5000, 'the glide ending after a wheel step');
   const g1 = await state(page);
   assert.ok(g1.align < 0.05, `the glide ended ${g1.align.toFixed(3)}° from E after a wheel step; it must still reach E`);
+  near(g1.fov, g.fov, 0.01, 'fov once the glide has landed, against fov right after the wheel step');
 
   await reopen(page, 'az=44&el=14&tour=0');
   await drag(page, C, { x: 20, y: 0 });                       // release about 1.4° out: snap
-  assert.equal((await state(page)).mode, 'snap', 'the release near E did not start a snap');
+  const s0 = await state(page);
+  assert.equal(s0.mode, 'snap', 'the release near E did not start a snap');
   await page.keyboard.press('+');
   const s = await state(page);
   assert.equal(s.mode, 'snap', `the + key during the snap left the mode at "${s.mode}"`);
+  assert.ok(s.fov < s0.fov - 2, `the + key during the snap moved fov only from ${s0.fov.toFixed(2)} to ${s.fov.toFixed(2)}; it must zoom in at once`);
   await until(page, () => window.__cloud.mode() === 'idle', null, 3000, 'the snap ending after +');
   const s1 = await state(page);
   assert.ok(s1.align < 0.05, `the snap ended ${s1.align.toFixed(3)}° from E after the + key; it must still reach E`);
+  near(s1.fov, s.fov, 0.01, 'fov once the snap has landed, against fov right after the + key');
 });
 
 test('a pinch that starts at E, with a little first-finger slip, ends at E', async (t) => {
@@ -221,8 +229,30 @@ test('a pinch that starts at E, with a little first-finger slip, ends at E', asy
   assert.ok(s1.align < 0.05, `1.5 s after a pinch that started at E the camera is ${s1.align.toFixed(3)}° from E`);
 });
 
-test('a fling coasts, but not with reduced motion', async (t) => {
-  const fling = async (page) => {
+test('a pinch after a deliberate one-finger drag away from E does not snap to E', async (t) => {
+  const { context, page } = await open(t, 'az=38&el=13&tour=0', { hasTouch: true });
+  const s0 = await state(page);
+  near(s0.align, 1, 0.01, 'alignment at load with el one degree below E');
+  const cdp = await context.newCDPSession(page);
+  const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y], id) => ({ x, y, id })) });
+  await touch('touchStart', [[300, 200]]);
+  for (let i = 1; i <= 17; i++) { await touch('touchMove', [[300, 200 - i]]); await sleep(16); }  // 17 px up, past the 10 px slop
+  const s1 = await state(page);
+  assert.ok(s1.align > 4 && s1.align < 5.5, `the drag ended ${s1.align.toFixed(2)}° from E; the test needs 4–5.5°, inside the 6° snap zone but well past where it started`);
+  await touch('touchStart', [[300, 183], [400, 183]]);
+  for (let i = 1; i <= 6; i++) { await touch('touchMove', [[300 - i * 10, 183], [400 + i * 10, 183]]); await sleep(16); }
+  await touch('touchEnd', []);
+  await sleep(1500);
+  const s2 = await state(page);
+  assert.ok(s2.fov < s1.fov - 5, `the pinch did not zoom: fov ${s1.fov.toFixed(2)} → ${s2.fov.toFixed(2)}`);
+  near(s2.align, s1.align, 0.01, 'alignment 1.5 s after a pinch that followed a drag away from E (a snap would bring it to 0)');
+});
+
+test('a fling coasts, but not once reduced motion is switched on', async (t) => {
+  // Both flings run back to back in one page, so the control and the reduced-motion fling share
+  // the same load and release timing; only the media setting differs between them.
+  const { page } = await open(t, 'az=0&el=0&tour=0');
+  const fling = async () => {
     await page.mouse.move(C.x - 150, C.y);
     await page.mouse.down();
     for (let i = 1; i <= 6; i++) { await page.mouse.move(C.x - 150 + i * 40, C.y); await sleep(10); }
@@ -231,10 +261,14 @@ test('a fling coasts, but not with reduced motion', async (t) => {
     await sleep(500);
     return { r, later: await state(page) };
   };
-  const normal = await fling((await open(t, 'az=0&el=0&tour=0')).page);
+  const normal = await fling();
   assert.equal(normal.r.mode, 'inertia', `control: a fling without reduced motion left the mode at "${normal.r.mode}", so this fling does not test coasting`);
   assert.ok(Math.abs(normal.later.az - normal.r.az) > 1, 'control: a fling without reduced motion did not coast');
-  const reduced = await fling((await open(t, 'az=0&el=0&tour=0', { reducedMotion: 'reduce' })).page);
+  await until(page, () => window.__cloud.mode() === 'idle', null, 5000, 'the control coast coming to rest');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await until(page, () => matchMedia('(prefers-reduced-motion: reduce)').matches, null, 2000, 'reduced motion taking effect');
+  await waitFrames(page, 2);                                   // the page's change listener has run
+  const reduced = await fling();
   assert.notEqual(reduced.r.mode, 'inertia', 'with reduced motion a fling started to coast');
   near(reduced.later.az, reduced.r.az, 0.001, 'az 0.5 s after a fling with reduced motion');
 });

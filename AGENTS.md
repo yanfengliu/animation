@@ -78,27 +78,51 @@ Obtain independent, preferably read-only review for substantial or high-risk cha
 
 Node 24 (`.nvmrc`). Each command below was run on Windows 11 with Node 24.18.1 on 2026-10-11.
 
-- `npm ci` installs the one dev dependency, Playwright 1.63.0 (pinned). The gates use that version's Chromium from the local Playwright cache; nothing downloads at test time.
-- `npm test` runs the headless suite, `node --test --test-concurrency=2 tests/*.test.mjs`, in about 50 s. Two files at a time, because SwiftShader WebGL2 is CPU-heavy. `PAGE=<path relative to the repo root>` runs it against another copy of the page.
+- `npm ci` installs the one dev dependency, Playwright 1.63.0 (pinned). It installs no browser, because neither `playwright` nor `playwright-core` has an install script.
+- `npx playwright install chromium` then puts that version's Chromium (153.0.8010.12) in the local Playwright cache. When the build is already there it reuses it and downloads nothing (2 s here). The gates use only that cache; nothing downloads at test time.
+- `npm test` runs the headless suite, `node --test --test-concurrency=2 tests/*.test.mjs`: 35 tests in about 46 s. Two files at a time, because SwiftShader WebGL2 is CPU-heavy. `PAGE=<path relative to the repo root>` runs it against another copy of the page.
 - `npm audit --audit-level=high` runs after any dependency change.
 - `npm run shoot -- --preset=all` (or `magic`, `off`, or single views; see the header of `scripts/shoot.mjs`) is the visual instrument. It saves PNGs under `tmp/shots/` and prints each one's sha256 and what the page reports. A visual change still needs someone to look at the shots at native resolution; the gates do not replace that.
-- `node tests/mutate.mjs [name ...]` re-proves the gates. It writes each mutant under `tmp/mutants/`, runs the gates against it, prints the red tests with their assertion lines, and exits 1 if any mutant leaves every gate green. Run it after changing a gate or the page. The full run takes about 23 minutes, so run only the mutants a change touches by name, and keep it the only browser workload while it runs.
+- `node tests/mutate.mjs [name ...]` re-proves the gates.
+  - It first runs the gate files on the real page and tree as a control, and stops with exit 2 unless every test passes.
+  - It then writes each mutant under `tmp/mutants/` and runs the gates against it. Each red test prints as CHECK (an assertion failed, an `until` timeout included) or ERROR (anything else, such as a browser that does not launch or a page that never becomes ready), with its test-file line.
+  - A mutant counts as killed only by a CHECK. One with only ERRORs is "errored", and one with 0 green tests is flagged.
+  - It exits 1 on any survivor or errored mutant. Tree mutants are deleted once scanned.
+  - Run it after changing a gate or the page. The full run (44 mutants) takes about 28 minutes, so run only the mutants a change touches by name, and keep it the only browser workload while it runs.
 
 What the suite proves (each file's header states its exact bound):
 
-- `tests/illusion.test.mjs`: at E, "hello world" strokes are at least 2× brighter than the gaps between them, at t 0, 7.3 and 31 s, at 1280×800 and 390×844, at fov 32 and 80 (1.8× there), and when canvas readback returns zeros. The stroke shapes are the same for two seeds, so they come from the message, not the particle draw. The text layer holds still over time, and zoom only scales the image. From 25° out (±25° az and el, +60° az, the back) the E strokes are no brighter than the back-view floor + 0.06, the text layer is a smear that changes with the seed, and a text particle carries the light and colour of an ambient one. The same seed builds the same cloud.
-- `tests/controls.test.mjs`: real mouse, wheel, keyboard and CDP touch input on a 640×400 page. Covers drag signs, rate and the ±70° clamp; zoom that changes only the field of view; arrow keys; the "Find the angle" glide and its cancel; snap near E; zooming during a glide or snap; touch drag and pinch, including a pinch at E; the tour (moves at load, stops on a press, stays stopped); coasting; and reduced motion (no tour, no coast, "Find the angle" jumps).
-- `tests/page.test.mjs`: no console or page errors; the only request is the Google Fonts stylesheet, and the page draws within 3 s if it never answers; no horizontal overflow at 390 px; Tab reaches the canvas and then "Find the angle" with focus styles that change pixels on screen; keys work on the focused canvas; the no-WebGL2 message.
-- `tests/hygiene.test.mjs`: a text scan of `scripts/`, `tests/` and the npm scripts. Every Playwright launch is literally `headless: true`. Nothing opens a system browser, a desktop opener or a headed, debug, inspector or report mode. Only Playwright code builds `file:` URLs, and child processes start only Node. This is the gate for the defect in `docs/learning/defect-register.md`.
+- `tests/illusion.test.mjs`:
+  - At E, "hello world" strokes are at least 2× brighter than the gaps between them, at t 0, 7.3 and 31 s, at 1280×800 and 390×844, at fov 32 and 80 (1.8× there), and when canvas readback returns zeros. The stroke shapes are the same for two seeds, so they come from the message, not the particle draw.
+  - At E at 1280×800 the strokes form two lines, the top one narrower, with a full-height stem at the left end of the top line ("h") and at the right end of the bottom line ("d"). So the text is neither mirrored nor turned 180°.
+  - At 390×844 the whole text block, measured across the full width, stays at least 8 px inside the frame.
+  - At E a text particle carries at least 3× the light of an ambient one and is warmer, so the reveal engages.
+  - The text layer at E holds still over time, and zoom only scales the image.
+  - From 25° out (±25° az and el, +60° az) the E strokes are no brighter than the back-view floor + 0.06. The back view is that floor, not a case tested against it.
+  - The text layer is checked for a seed-dependent smear at az+25 only. At az+25, el−25 and the back a text particle carries the light and colour of an ambient one.
+  - The same seed builds the same cloud.
+- `tests/controls.test.mjs`: real mouse, wheel, keyboard and CDP touch input on a 640×400 page. Covers drag signs, rate and the ±70° clamp; zoom that changes only the field of view; arrow keys; the "Find the angle" glide and its cancel; snap near E; zooming during a glide or snap, which takes at once and holds when the move lands; touch drag and pinch, including a pinch at E and a pinch after a deliberate 17 px drag away from E, which must not snap; the tour (moves at load, stops on a press, still stopped 9 s later); coasting; and reduced motion (no tour, no coast once switched on in the same page, "Find the angle" jumps).
+- `tests/page.test.mjs`: no console or page errors; the only request is the Google Fonts stylesheet, and the page draws within 10 s if it never answers; no horizontal overflow at 390 px; Tab reaches the canvas and then "Find the angle" with focus styles that change pixels on screen; keys work on the focused canvas; Chromium's accessibility tree exposes the canvas as a focusable application with a role description and a name; the no-WebGL2 message. Each check closes its browser context as soon as it is done.
+- `tests/hygiene.test.mjs`: a text scan of `scripts/`, `tests/`, root code files such as a Playwright config, the npm scripts, and the commands in `.claude/settings*.json` files that `.gitignore` does not name. This is the gate for the defect in `docs/learning/defect-register.md`.
+  - Every Playwright launch passes a literal `headless: true`, with no spread, no call building its options and no channel.
+  - Nothing names a system browser, a desktop opener, an opener package or live-reload server (`open-cli`, `live-server`, `lite-server`, `browser-sync`, `npx open`, `http-server -o`), `connectOverCDP`, or a headed, debug, UI, inspector, code-generator, open or report mode (`--headed`, `--debug`, `--ui`, `--open`, `PWDEBUG`, `playwright open`, `show-report`, a page `pause()`). A Playwright config picks no channel. No shell command starts with an opener.
+  - Only Playwright code builds `file:` URLs, including from `import.meta.url` outside `fileURLToPath`.
+  - Child processes start only Node, whether `child_process` is imported whole, by name, renamed or destructured.
 
-Bound: one engine, headless Chromium 153 with SwiftShader WebGL2, device pixel ratio 1 for the image gates, and only the listed views, times, seeds and inputs. The image gates measure luminance and shape, not whether a person can read the text. The hygiene scan cannot see code assembled at run time or the desktop app's own browser pane.
+Bound: one engine, headless Chromium 153 with SwiftShader WebGL2, device pixel ratio 1 for the image gates, and only the listed views, times, seeds and inputs. The image gates measure luminance and shape, not whether a person can read the text. No screen reader was available, so the accessibility check reads Chromium's tree, not what NVDA or JAWS do with it.
+
+The hygiene scan's blind spots:
+- code assembled at run time: `eval`, strings or names built from pieces, computed keys such as `cp['exec']`, a launch method reached by destructuring;
+- programs that open a browser by default but are not named in the scan;
+- files outside the scanned paths: `docs/`, `tmp/`, `node_modules` and its install scripts, git hooks, `~/.claude`, settings files `.gitignore` names, and agents' scratch scripts outside the repo;
+- the desktop app's own browser pane, which opened the file in the original incident.
 
 ## Invariants & boundaries
 
 - The page stays one self-contained `index.html` that opens straight from disk: no build step, no external scripts, no runtime dependencies. The only external request is the optional Google Fonts stylesheet.
 - Text particles move only along their own sight-line from the secret eye, so their projection from it never changes. Ambient drift plus wobble is at most about 0.52 world units. Seen from E that is 0.42σ at the text plane and less beyond it (σ is the relocation width in the plan), but up to about 0.9σ for the nearest particles. So the density that hides the text holds closely at and beyond the plane and only roughly in front of it.
 - Zoom changes the field of view only. The eye stays on the orbit sphere with world-up roll, because moving it breaks the illusion.
-- The test contract changes only together with the gates. Query parameters: `az`, `el`, `fov` (degrees), `t` (freezes the particle clock), `tour=0`, `layer=text|ambient`, `seed`. Read-only `window.__cloud`: `ready`, `frame`, `magic`, `view()`, `alignment()`, `mode()`, `counts`. DOM ids: `#scene`, `#find`, `#readout`, `#hint`.
+- The test contract changes only together with the gates. Query parameters: `az`, `el`, `fov` (degrees), `t` (freezes the particle clock), `tour=0`, `layer=text|ambient`, `seed`. Read-only `window.__cloud`: `ready`, `frame`, `magic`, `view()`, `alignment()`, `mode()`, `counts`. DOM ids: `#scene`, `#find`, `#readout`, `#hint`, `#nogl`. `#scene` is exposed as a focusable `application` with a role description and a name.
 - The page doubles as a claude.ai artifact: one deliberate dark theme with colour tokens on `:root`, no `#key=value` hash state, and it works at 390 px wide.
 
 ## Conventions

@@ -9,17 +9,23 @@
 // the draw.
 // Proves: at E the strokes are at least 2× brighter than the gaps (1.8× at fov 80) and match
 // across seeds at t 0, 7.3 and 31 s, at 1280×800 and 390×844, at fov 32 and 80, and when 2D
-// canvas readback (getImageData) returns zeros as anti-fingerprinting browsers do; the E text
-// layer holds still over time and zoom only scales it; from 25° out (±25° az and el, +60° az, the
-// back) the E strokes are no brighter than the back-view floor + 0.06, the az+25 text layer is a
-// smear that changes with the seed, and a text particle carries the light and colour of an
-// ambient one; the same seed builds the same cloud and another seed a different one.
+// canvas readback (getImageData) returns zeros as anti-fingerprinting browsers do; at E at
+// 1280×800 (t 0) the strokes form two lines, the top one narrower, with a full-height stem at the
+// left end of the top line and the right end of the bottom line and short letters at the other
+// ends, so the text is neither mirrored nor turned 180°; at 390×844 the whole stroke mask, measured
+// across the full width, stays at least 8 px inside the frame; at E a text particle carries at
+// least 3× the light of an ambient one and is warmer (the reveal engages); the E text layer holds
+// still over time and zoom only scales it; from 25° out (±25° az and el, +60° az) the E strokes
+// are no brighter than the back-view floor + 0.06 (the back view is the floor itself, not a case
+// tested against it); the az+25 text layer, the only off-angle layer measured, is a smear that
+// changes with the seed; at az+25, el−25 and the back a text particle carries the light and
+// colour of an ambient one; the same seed builds the same cloud and another seed a different one.
 // Does not prove that a person can read the text, or anything about views, times or seeds not
 // listed here, real GPUs, or device pixel ratios above 1.
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startBrowser, newContext, magic, render } from './lib/harness.mjs';
-import { luminance, channelSums, strokeMask, strokeGapRatio, iou, scaleMask } from './lib/image.mjs';
+import { luminance, channelSums, strokeMask, strokeGapRatio, iou, scaleMask, lineLayout } from './lib/image.mjs';
 
 // Thresholds, each set from the real page and the mutants in tests/mutate.mjs (comments give the
 // measured values, real page first, at 1280×800 unless named).
@@ -30,6 +36,12 @@ const MIN_TIME_IOU = 0.8;        // E strokes t=0 vs later: 0.89 real, 0.55 side
 const MIN_SCALE_IOU = 0.5;       // zoomed strokes vs base strokes scaled: ≥ 0.67 real, ≤ 0.40 dolly
 const FLOOR_MARGIN = 0.06;       // excess over the back-view floor from 25° out: ≤ 0.05 real, 0.10 flat text at el±25
 const MAX_SMEAR_SEED_IOU = 0.14; // az+25 text layer, seed vs seed: 0.07 real, 0.21 flat text
+const LINE_WIDTH_RATIO = [0.76, 0.92]; // top/bottom line width at E: 0.846 real, 1.176 turned 180°
+const FULL_STEM = 0.8;           // end-strip height / line height at "h" and "d": 0.96 and 0.88 real, 0.53 and 0.59 mirrored
+const SHORT_END = 0.7;           // the same at "o" and "w": 0.53 and 0.59 real, 0.96 and 0.88 mirrored
+const MIN_FIT_MARGIN = 8;        // px between the strokes and the frame edges at 390×844: 30 real, 0 without the phone widening
+const MIN_REVEAL_LIGHT = 3;      // text/ambient light per particle at E: 12.1 real, 0.87 reveal off
+const MIN_REVEAL_WARMTH = 0.2;   // text minus ambient warmth at E: 0.48 real, 0.00 reveal off
 const OTHER_SEED = 8;
 const DIM = { blur: 5, bandpass: 15 }; // masks of unlit text layers: sky removed, dots merged
 // Zoomed views scale the mask with the text: blur and gap distance follow the zoom factor s.
@@ -99,6 +111,40 @@ test('legible at E at 390×844', async (t) => {
   assertLegible('E 390×844 t=0', L);
 });
 
+// The layout comes from the page's glyph geometry in x-heights: "hello" is 4.55 wide and "world"
+// 5.42, both lines 1.71 tall (ascender 1.55 plus the 0.16 stroke). "h" opens the top line and "d"
+// closes the bottom line with full-height stems; "o" closes the top line and "w" opens the bottom
+// line at x-height only (about 0.6 and 0.4 of the line height in a 0.15-line-height strip).
+test('at E the message reads "hello" over "world", left to right', async (t) => {
+  const m = await strokesAt(wide, at(0, 0, '&t=0'));
+  const L = lineLayout(m);
+  assert.ok(L, `the E strokes (box ${JSON.stringify(m.box)}) have no empty row between two lines`);
+  const { top, bottom } = L;
+  const widthRatio = top.width / bottom.width;
+  const ends = { hLeft: top.left / top.height, oRight: top.right / top.height, wLeft: bottom.left / bottom.height, dRight: bottom.right / bottom.height };
+  t.diagnostic(`gap ${L.gap} px; top ${JSON.stringify(top)}; bottom ${JSON.stringify(bottom)}; width ratio ${widthRatio.toFixed(3)}; end heights / line height ${Object.entries(ends).map(([k, v]) => `${k} ${v.toFixed(2)}`).join(', ')}`);
+  assert.ok(L.gap >= 3, `the two lines are only ${L.gap} px apart`);
+  assert.ok(widthRatio >= LINE_WIDTH_RATIO[0] && widthRatio <= LINE_WIDTH_RATIO[1], `the top line is ${top.width} px wide and the bottom line ${bottom.width} px (ratio ${widthRatio.toFixed(3)}); "hello" over "world" gives about 0.84, so it must be within ${LINE_WIDTH_RATIO.join('–')} (a frame turned 180° gives about 1.19)`);
+  assert.ok(ends.hLeft >= FULL_STEM, `the left end of the top line is only ${ends.hLeft.toFixed(2)} of the line height; the "h" stem there must reach at least ${FULL_STEM} (a mirrored frame puts "o" there)`);
+  assert.ok(ends.dRight >= FULL_STEM, `the right end of the bottom line is only ${ends.dRight.toFixed(2)} of the line height; the "d" stem there must reach at least ${FULL_STEM} (a mirrored frame puts "w" there)`);
+  assert.ok(ends.oRight <= SHORT_END, `the right end of the top line is ${ends.oRight.toFixed(2)} of the line height; the "o" there must stay at or below ${SHORT_END}`);
+  assert.ok(ends.wLeft <= SHORT_END, `the left end of the bottom line is ${ends.wLeft.toFixed(2)} of the line height; the "w" there must stay at or below ${SHORT_END}`);
+});
+
+test('at 390×844 the whole message fits inside the frame', async (t) => {
+  const v = await view(phone, at(0, 0, '&t=0&layer=text'));
+  const { width: W, height: H } = v.img;
+  const band = [0.15, 0.85];                         // full width; rows clear of the bar and the hint
+  const m = strokeMask(v.lum, W, H, { region: [0, 1, ...band] });
+  const { x0, x1, y0, y1 } = m.box;
+  const margins = { left: x0, right: W - 1 - x1, top: y0 - Math.ceil(band[0] * H), bottom: Math.floor(band[1] * H) - y1 };
+  t.diagnostic(`text-layer strokes over the full width: ${m.strokes} px, box ${JSON.stringify(m.box)} in ${W}×${H}, margins ${JSON.stringify(margins)}`);
+  assert.ok(m.strokes >= 3000, `only ${m.strokes} stroke pixels at 390×844`);
+  for (const [side, px] of Object.entries(margins)) {
+    assert.ok(px >= MIN_FIT_MARGIN, `the text strokes come within ${px} px of the ${side} edge${side === 'left' || side === 'right' ? ' of the frame' : ' of the measured band'} at 390×844; the whole message must fit with at least ${MIN_FIT_MARGIN} px to spare`);
+  }
+});
+
 test('legible at E when canvas readback returns zeros', async (t) => {
   const L = await legibility(blind, at(0, 0, '&t=0'));
   t.diagnostic(describe('E with blank getImageData', L));
@@ -155,18 +201,32 @@ test('the text layer at +25° az is smeared', async (t) => {
   assert.ok(seeds <= MAX_SMEAR_SEED_IOU, `the text layer at az+25 has the same shape for seeds 1 and ${OTHER_SEED} (IoU ${seeds.toFixed(3)}, above ${MAX_SMEAR_SEED_IOU}); it shows structure, not a smear`);
 });
 
+// Light per particle of each layer at a view, from the full render and the two layer renders:
+// with additive blending, the full render minus one layer leaves the other layer's light. Returns
+// the text/ambient light per particle and each layer's warmth, (red − blue) / (red + blue).
+async function particleLight(q) {
+  const full = channelSums((await view(wide, q)).img);
+  const textOnly = await view(wide, q + '&layer=text'), ambOnly = await view(wide, q + '&layer=ambient');
+  const tx = channelSums(textOnly.img), am = channelSums(ambOnly.img);
+  const lt = { r: full.r - am.r, g: full.g - am.g, b: full.b - am.b };
+  const la = { r: full.r - tx.r, g: full.g - tx.g, b: full.b - tx.b };
+  const per = (l, n) => (0.2126 * l.r + 0.7152 * l.g + 0.0722 * l.b) / n;
+  const warmth = (l) => (l.r - l.b) / (l.r + l.b);
+  return { light: per(lt, textOnly.counts.text) / per(la, textOnly.counts.ambient), wt: warmth(lt), wa: warmth(la) };
+}
+
+test('at E the reveal lights the text particles: brighter and warmer than ambient ones', async (t) => {
+  const { light, wt, wa } = await particleLight(at(0, 0, '&t=0'));
+  t.diagnostic(`E: text/ambient light per particle ${light.toFixed(3)}, warmth text ${wt.toFixed(3)} ambient ${wa.toFixed(3)}`);
+  assert.ok(light >= MIN_REVEAL_LIGHT, `at E a text particle carries only ${light.toFixed(3)}× the light of an ambient one; the reveal must lift it to at least ${MIN_REVEAL_LIGHT}×`);
+  assert.ok(wt - wa >= MIN_REVEAL_WARMTH, `at E text light is warmer than ambient light by only ${(wt - wa).toFixed(3)} (red−blue over red+blue); the reveal's gold must add at least ${MIN_REVEAL_WARMTH}`);
+});
+
 test('from 25° out a text particle carries the light and colour of an ambient one', async (t) => {
   const rows = [];
   for (const [name, q] of [['az+25', at(25, 0, '&t=0')], ['el-25', at(0, -25, '&t=0')], ['back', back('&t=0')]]) {
-    const full = channelSums((await view(wide, q)).img);
-    const textOnly = await view(wide, q + '&layer=text'), ambOnly = await view(wide, q + '&layer=ambient');
-    const tx = channelSums(textOnly.img), am = channelSums(ambOnly.img);
-    // Additive blending: the full render minus one layer leaves the other layer's light.
-    const lt = { r: full.r - am.r, g: full.g - am.g, b: full.b - am.b };
-    const la = { r: full.r - tx.r, g: full.g - tx.g, b: full.b - tx.b };
-    const per = (l, n) => (0.2126 * l.r + 0.7152 * l.g + 0.0722 * l.b) / n;
-    const warmth = (l) => (l.r - l.b) / (l.r + l.b);
-    rows.push([name, per(lt, textOnly.counts.text) / per(la, textOnly.counts.ambient), warmth(lt), warmth(la)]);
+    const { light, wt, wa } = await particleLight(q);
+    rows.push([name, light, wt, wa]);
   }
   for (const [name, light, wt, wa] of rows) t.diagnostic(`${name}: text/ambient light per particle ${light.toFixed(3)}, warmth text ${wt.toFixed(3)} ambient ${wa.toFixed(3)}`);
   for (const [name, light, wt, wa] of rows) {
