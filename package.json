@@ -1,0 +1,17 @@
+{
+  "name": "animation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Anamorphic particle cloud: a self-contained WebGL2 page that reads \"hello world\" from one secret viewpoint.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "shoot": "node scripts/shoot.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
