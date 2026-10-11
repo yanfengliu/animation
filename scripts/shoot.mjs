@@ -3,14 +3,17 @@
 //
 // Usage: node scripts/shoot.mjs [options] [view ...]
 //   A view is comma-separated key=value pairs:
-//     az, el, fov, t, layer, seed, tour  page query parameters (tour defaults to 0, t to --t)
-//     viewport=WxH, dpr=N, reduced=1      browser context
+//     az, el, fov, t                      page query parameters, numbers (t defaults to --t; t=live runs the clock)
+//     seed, layer=text|ambient, tour=0|1  page query parameters (no layer: the full scene; tour defaults to 0)
+//     viewport=WxH, dpr=N, reduced=0|1    browser context
 //     wait=MS                             extra wait after the frames (for live clocks)
 //     clip=X:Y:W:H                        CSS-pixel crop of the screenshot
 //     name=NAME                           file name (without .png)
 //   Options: --viewport=1280x800 --dpr=1 --t=0 --frames=4 --out=tmp/shots --preset=magic|off|all
 // Prints one line per shot: path, sha256 of the PNG bytes, and what the page reports.
-// Exits non-zero when WebGL2 is missing, the page logs an error, or a requested view did not take.
+// Exits 2 before shooting on a malformed option or view: an unknown or repeated key, an empty value,
+// or a value the page would not read as meant (it quietly renders its default for those).
+// Exits 1 when WebGL2 is missing, the page logs an error, or a requested view did not take.
 
 import { chromium } from 'playwright';
 import { createHash } from 'node:crypto';
@@ -21,6 +24,15 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pageUrl = pathToFileURL(path.join(root, 'index.html')).href;
 const MAGIC = { az: 38, el: 14 };
+// Every key a view may use. The page draws one layer for layer=text or layer=ambient and the full
+// scene for any other value, and runs its tour unless tour=0; reduced=1 asks the browser for
+// reduced motion. So those three keys take only the values below.
+const VIEW_KEYS = ['az', 'el', 'fov', 't', 'seed', 'layer', 'tour', 'viewport', 'dpr', 'reduced', 'wait', 'clip', 'name'];
+const CHOICES = {
+  layer: { values: ['text', 'ambient'], help: 'layer=text or layer=ambient, or leave layer out for the full scene' },
+  tour: { values: ['0', '1'], help: 'tour=0 (no tour, the default here) or tour=1' },
+  reduced: { values: ['0', '1'], help: 'reduced=1 (reduced motion) or reduced=0' },
+};
 
 const opts = { viewport: '1280x800', dpr: '1', t: '0', frames: '4', out: 'tmp/shots', preset: '' };
 const views = [];
@@ -33,17 +45,26 @@ for (const arg of process.argv.slice(2)) {
 }
 
 function parseView(spec) {
-  const v = {};
+  const v = Object.create(null);
   for (const part of spec.split(',').filter(Boolean)) {
     const i = part.indexOf('=');
     if (i < 1) fail(`view part "${part}" in "${spec}" is not key=value`);
-    v[part.slice(0, i)] = part.slice(i + 1);
+    const k = part.slice(0, i);
+    if (k in v) fail(`view "${spec}" gives ${k} twice; give each key once`);
+    v[k] = part.slice(i + 1);
   }
   return v;
 }
 function fail(msg) { console.error('shoot: ' + msg); process.exit(2); }
-// Numeric view values must be finite: a typo such as az=3o would otherwise render the default view.
+// Keys and values are checked because the page renders its default for anything it cannot read:
+// a typo such as az=3o, eI=14 or layer=txt would otherwise shoot the default view and look fine.
 function checkView(v) {
+  for (const [k, val] of Object.entries(v)) {
+    if (!VIEW_KEYS.includes(k)) fail(`view ${JSON.stringify(v)}: unknown key "${k}" (${k}=${val}); known keys: ${VIEW_KEYS.join(', ')}`);
+    if (val === '') fail(`view ${JSON.stringify(v)}: ${k}= has no value; give one or leave ${k} out`);
+    const c = CHOICES[k];
+    if (c && !c.values.includes(val)) fail(`view ${JSON.stringify(v)}: ${k}=${val} is not allowed; use ${c.help}`);
+  }
   for (const k of ['az', 'el', 'fov', 't', 'dpr', 'wait']) {
     const val = v[k] ?? (k === 't' || k === 'dpr' ? opts[k] : undefined);
     if (val === undefined || (k === 't' && val === 'live')) continue;
@@ -76,7 +97,7 @@ function preset(name) {
     off.push(at(0, d, { t, name: `off_el${d > 0 ? '+' : ''}${d}_t${t}` }));
   }
   off.push({ az: String(MAGIC.az + 180), el: String(-MAGIC.el), name: 'off_back' });
-  off.push({ az: String(MAGIC.az + 90), el: '70', name: 'off_top' });   // el+60 already covers az of E at el 70
+  off.push({ az: String(MAGIC.az + 90), el: '70', name: 'off_top' });   // off_el+56 already covers E's azimuth at el 70
   off.push(at(25, 0, { layer: 'text', name: 'off_az+25_textlayer' }));
   off.push(at(8, 0, { layer: 'text', name: 'off_az+8_textlayer' }));
   let s = 20261010;
@@ -96,6 +117,8 @@ function preset(name) {
   fail(`unknown preset "${name}"; known: magic, off, all`);
 }
 
+if (!/^\d+x\d+$/.test(opts.viewport)) fail(`--viewport=${opts.viewport} is not WxH, such as --viewport=1280x800`);
+if (!/^\d+$/.test(opts.frames)) fail(`--frames=${opts.frames} is not a whole number of frames`);
 if (opts.preset) views.push(...preset(opts.preset));
 for (const v of views) checkView(v);
 if (!views.length) fail('no views; pass key=value views or --preset=magic|off|all (see the header of scripts/shoot.mjs)');
