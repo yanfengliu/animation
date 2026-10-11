@@ -27,6 +27,26 @@ Dependencies: the gates build on the page contract below. The canon sync can fil
 
 **β settled at 0.2, not 0.85** (W2, measured). Turning the camera about the vertical axis smears the text sideways only, so the row profile of the text survives at every azimuth; tilting does the same to the column profile. At β 0.85 the rows showed as streaks at ±8° and ±25°: the high-pass row residual against a β 0 render was 1.7–2.5 times the cloud's own profile noise. At β 0.2 it is at most 0.67 everywhere, against a noise floor of about 0.55. With so few text particles (1,104 of 18,000 at the default seed), legibility at E comes mostly from the reveal effects: gain, size, halo and gold. Their positions still come from the relocation, so the letters are geometric. Superseded on 2026-10-11 by the owner's directive below: the reveal effects are gone, so β and the stroke geometry are retuned for legibility from positions alone.
 
+**Legibility from positions alone (W8, 2026-10-11).** With the reveal effects gone, β is 0.85 and the depth-of-field aperture is 0.14 (global). The default seed gives 4,951 text and 13,049 ambient particles. A test-only `beta` parameter renders the same base cloud at any rate, so render(β) − render(0) isolates relocation.
+
+W8's trade-off table follows. "E" is the stroke/gap ratio at E at 1280×800, t 0. The other columns are the high-passed residual of render(β) − render(0) over the cloud's own noise: rows for azimuth views and columns for elevation views, as + view / − view. Seed 1, t 0.
+
+| Candidate | Text particles | E | az ±25 | el ±15 | el ±25 | az +60 | Back | Floor (diagonal) |
+|---|---|---|---|---|---|---|---|---|
+| β 0.2, aperture 0.22 | 1,144 | 1.38 | .46/.34 | .65/.61 | .57/.54 | .42/.48 | .38/.49 | .51/.37 |
+| β 0.5 | 2,871 | 1.33 | .85/.71 | 1.35/1.35 | 1.19/1.27 | .77/.81 | .72/.75 | .67/.68 |
+| β 0.7 | 4,024 | 1.44 | 1.11/.84 | 1.57/1.64 | 1.40/1.59 | .90/.86 | .96/.86 | .84/.81 |
+| **β 0.85, aperture 0.14 (chosen)** | 4,951 | 1.61 | 1.25/1.02 | 2.03/2.31 | 1.74/2.20 | 1.03/1.02 | 1.09/1.15 | 1.17/.88 |
+| β 1.0 | 5,797 | 1.76 | 1.69/1.05 | 2.41/2.70 | 2.10/2.57 | 1.24/1.05 | 1.22/1.34 | 1.19/.92 |
+
+For comparison, the old page with the reveal effects measured 2.35–2.50 at E.
+
+The coordinator accepted β 0.85 after looking at native resolution. At E the words read from positions alone, in the same colour and brightness as every other particle. From az ±25° the rows are near the noise floor. From el ±15–25° the letter stems show as faint vertical streaks, which is an accepted cost.
+
+The streaks have a structural cause. An elevation turn adds no roll, so every particle keeps its screen column. An azimuth turn at E's 14° elevation adds roll of about Δaz·sin 14°, which washes the rows out.
+
+An untried remedy is slanted (italic) glyphs, which would spread each stem's column. It was offered to the owner rather than done.
+
 **Floating without breaking it.** Text particles bob only along their own sight-line from E, so their projection from E never changes. Ambient particles drift in a smooth, small flow field whose amplitude stays well under σ, so the density compensation holds.
 
 **Camera.** Orbit at a fixed radius around the cloud centre with world-up roll. Zoom changes the field of view only, because moving the eye off the orbit sphere would break the illusion. The field of view widens on narrow screens so the text block always fits. Releasing a drag within a few degrees of the secret angle snaps into it. "Find the angle" glides there. An idle tour passes through it, and is off under reduced motion.
@@ -97,6 +117,10 @@ One deliberate dark theme, which the artifact contract allows.
 - [x] The session paused at the owner's usage limit and resumed. W7 is repairing F19–F22 on `main`; its full mutation proof is deferred because the page is about to change.
 - [ ] Owner directive 2026-10-11, no reveal effects:
   - W8 (page): remove every angle-dependent effect on text particles, then retune β, stroke width, particle count and sprite size until the words are obvious at E from positions alone. Measure the row residual and look at near and far angles. Republish the artifact.
+    - Done, left uncommitted for W9 to commit with the gates (`index.html` `a8d6e443…`, `scripts/shoot.mjs` `13817f84…`).
+    - Result: β 0.85 and aperture 0.14 (see the table above), plus the `beta` parameter.
+    - Coordinator looked at native resolution: E at 1280 reads from positions alone; el+25 shows faint vertical stem streaks, an accepted cost.
+    - `npm test` on this page: 30 of 35 pass. The 5 failures are the reveal gate and the thresholds tuned to the old page; W9 re-derives them.
   - W9 (gates): replace the reveal gate with "text and ambient particles render alike at every angle", re-derive the illusion thresholds, record the owner-reported defect in the register, and run the full mutation proof once.
 - [ ] Then: a focused review round 3, `docs/devlog/summary.md`, the lessons entry (it now has to drop "let the reveal effects carry legibility"), and the Outcome section.
 - [ ] Review round 1 (read-only, after integration): an independent review of the integrated revision, covering the gates and the round-0 repairs.
