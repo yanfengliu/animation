@@ -14,6 +14,8 @@ Stack: plain HTML, CSS and JavaScript on WebGL2. Node 24 (`.nvmrc`) is for dev t
 
 The design and acceptance record is `docs/work/0_hello-world-cloud/plan.md`.
 
+This repo's own rules: [docs/policies/local-rules.md](docs/policies/local-rules.md).
+
 <!-- FLEET-CANON:BEGIN sha=21892c165855 generated from ../fleet/FLEET.md by `npm run sync-canon` — do not edit inside this block; this repo's own rules go in docs/policies/local-rules.md -->
 ## Fleet constitution
 
@@ -80,7 +82,7 @@ Node 24 (`.nvmrc`). Each command below was run on Windows 11 with Node 24.18.1 o
 - `npm test` runs the headless suite, `node --test --test-concurrency=2 tests/*.test.mjs`, in about 50 s. Two files at a time, because SwiftShader WebGL2 is CPU-heavy. `PAGE=<path relative to the repo root>` runs it against another copy of the page.
 - `npm audit --audit-level=high` runs after any dependency change.
 - `npm run shoot -- --preset=all` (or `magic`, `off`, or single views; see the header of `scripts/shoot.mjs`) is the visual instrument. It saves PNGs under `tmp/shots/` and prints each one's sha256 and what the page reports. A visual change still needs someone to look at the shots at native resolution; the gates do not replace that.
-- `node tests/mutate.mjs [name ...]` re-proves the gates. It writes each mutant under `tmp/mutants/`, runs the gates against it, prints the red tests with their assertion lines, and exits 1 if any mutant leaves every gate green. Run it after changing a gate or the page.
+- `node tests/mutate.mjs [name ...]` re-proves the gates. It writes each mutant under `tmp/mutants/`, runs the gates against it, prints the red tests with their assertion lines, and exits 1 if any mutant leaves every gate green. Run it after changing a gate or the page. The full run takes about 23 minutes, so run only the mutants a change touches by name, and keep it the only browser workload while it runs.
 
 What the suite proves (each file's header states its exact bound):
 
