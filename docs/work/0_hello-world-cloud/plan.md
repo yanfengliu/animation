@@ -11,6 +11,8 @@ The owner asked for an animated particle cloud floating in the air, where changi
 
 Outcome: one self-contained WebGL page, `index.html`, showing a slowly drifting cloud of glowing particles. From one secret viewpoint a subset of the particles lines up to read "hello" above "world". From every other viewpoint it looks like an ordinary cloud. The viewer changes the angle by dragging, or watches an idle camera tour that passes through the viewpoint.
 
+Goal, set 2026-10-11 when the owner asked the coordinator to work directly on `main` with subagents: the page is on `main` and pushed. It is gated by a green `npm test` that proves the illusion and the controls, with each gate shown red when its defect is reintroduced. It has passed a second independent review with its material findings fixed and been accepted by the coordinator looking at native resolution. It is published as a private artifact, and no worktrees or side branches are left.
+
 ## Scope
 
 Included: the page; its Playwright gates; a screenshot tool for visual checks; repo scaffolding (AGENTS.md, CLAUDE.md, .gitignore, devlog); onboarding `animation` into the fleet census and canon; publishing the page as a private artifact.
@@ -73,6 +75,9 @@ Dependencies: the gates build on the page contract below. The canon sync can fil
   - Merged into the integration branch as `891558f`. Review round 0 of the page started on that revision.
 - [ ] W3 gates (started alongside the W2 follow-up, on top of W2's branch): Playwright suite through real input, each gate proved red, AGENTS.md Gates, defect-register entry for the owner-reported save prompt.
 - [x] Review round 0 of the page (`891558f`; Claude CLI pinned to `claude-opus-5-5[1m]` at max effort, read-only): no critical or major findings. Nine minor findings were accepted and routed; W2 is repairing the page and W3 is gating the repairs. Record: [reviews/0_implementation.md](reviews/0_implementation.md).
+- [x] W2 repairs `71be0a2`: all seven page findings were fixed and checked through real input. Default counts are now 1,143 text and 16,857 ambient, because the stroke mask comes from glyph geometry.
+- [x] Owner directive, 2026-10-11: work directly on `main` with subagents (recorded in `docs/policies/local-rules.md`). The integration branch was fast-forwarded into `main` (`f0e380d`). The coordinator's, W1's and W2's worktrees and branches are removed. W3 finishes in its worktree, the last one, and is merged next.
+- [x] W3 was cut off by an API session limit (reset 03:50 PDT) partway through its mutation proofs. It resumed at 08:26 with its files intact.
 - [ ] Review round 1 (read-only, after integration): an independent review of the integrated revision, covering the gates and the round-0 repairs.
 - [ ] Coordinator: integrate, look at the result at native resolution, merge, push, publish, devlog.
 
