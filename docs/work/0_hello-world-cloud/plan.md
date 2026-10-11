@@ -48,13 +48,13 @@ Dependencies: the gates build on the page contract below. The canon sync can fil
 - [ ] Real input works: mouse drag, touch drag, wheel and pinch zoom (field of view only), arrow keys, "Find the angle", snap near the angle, the tour resuming after idle and stopping on input, and reduced motion. Checked by gates that drive real input events.
 - [ ] `npm test` runs headless, and each gate has been shown to fail with its defect reintroduced.
 - [ ] The page meets the artifact contract: self-contained, colour tokens with an explicit dark theme, works at phone width with no horizontal scroll, visible keyboard focus.
-- [ ] The repo is in the fleet: AGENTS.md with the canon block filled by the sync, CLAUDE.md is `@AGENTS.md`, .gitignore, census lists `animation`, and the fleet gate is green apart from items the owner has not decided.
+- [x] The repo is in the fleet: AGENTS.md with the canon block filled by the sync, CLAUDE.md is `@AGENTS.md`, .gitignore, census lists `animation`, and the fleet gate is green apart from items the owner has not decided.
 - [ ] An independent review ran on the integrated revision and its material findings are resolved; work is merged to `main` and pushed, worktrees are removed, and the page is published as a private artifact.
 
 ## Implementation steps
 
 - [x] Coordinator: allocate this folder, write the plan and contract, add .gitignore.
-- [ ] W1 scaffold (Sonnet, own worktrees): AGENTS.md, CLAUDE.md, census entry, canon sync. Runs alongside W2.
+- [x] W1 scaffold (Sonnet, own worktrees): AGENTS.md and CLAUDE.md (animation `110ae97`), canon block rendered with fleet's `canon.mjs` (`f0d4cb5`), census entry (fleet `7e7f1e9`). Coordinator checked: fleet drift and census tests pass with animation current. `met` was onboarded by another session (met `58d7a81`, fleet `22bca33`), so W1 left it alone. No `docs/policies/local-rules.md` yet, because there is no local-only rule.
 - [ ] W2 page (Opus, own worktree): `index.html`, `package.json` and `.nvmrc`, screenshot tool, visual iteration.
 - [ ] W3 gates (after W2): Playwright suite through real input, each gate proved red.
 - [ ] W4 review (read-only, after integration): independent review against these criteria.
