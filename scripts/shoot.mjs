@@ -51,7 +51,8 @@ function preset(name) {
   for (const vp of ['1280x800', '390x844']) {
     const tag = vp.split('x')[0];
     for (const t of ['0', '7.3', '31']) magic.push(at(0, 0, { viewport: vp, t, name: `magic_${tag}_t${t}` }));
-    magic.push(at(0, 0, { viewport: vp, fov: vp === '1280x800' ? '32' : '50', name: `magic_${tag}_zoomin` }));
+    // Zoom in as far as the text block still fits (the phone's base FOV is about 66 degrees).
+    magic.push(at(0, 0, { viewport: vp, fov: vp === '1280x800' ? '32' : '58', name: `magic_${tag}_zoomin` }));
     magic.push(at(0, 0, { viewport: vp, fov: vp === '1280x800' ? '80' : '95', name: `magic_${tag}_zoomout` }));
   }
   magic.push(at(0, 0, { layer: 'text', name: 'magic_1280_textlayer' }));
@@ -59,7 +60,7 @@ function preset(name) {
   for (const d of [8, -8, 25, -25, 60, -60]) off.push(at(d, 0, { name: `off_az${d > 0 ? '+' : ''}${d}` }));
   for (const d of [8, -8, 25, -25, 60, -60]) off.push(at(0, d, { name: `off_el${d > 0 ? '+' : ''}${d}` }));
   off.push({ az: String(MAGIC.az + 180), el: String(-MAGIC.el), name: 'off_back' });
-  off.push({ az: String(MAGIC.az), el: '70', name: 'off_top' });
+  off.push({ az: String(MAGIC.az + 90), el: '70', name: 'off_top' });   // el+60 already covers az of E at el 70
   off.push(at(25, 0, { layer: 'text', name: 'off_az+25_textlayer' }));
   off.push(at(8, 0, { layer: 'text', name: 'off_az+8_textlayer' }));
   let s = 20261010;
