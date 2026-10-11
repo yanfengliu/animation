@@ -9,7 +9,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "shoot": "node scripts/shoot.mjs"
+    "shoot": "node scripts/shoot.mjs",
+    "test": "node --test --test-concurrency=2 tests/*.test.mjs"
   },
   "devDependencies": {
     "playwright": "1.63.0"
