@@ -45,7 +45,7 @@ The coordinator accepted β 0.85 after looking at native resolution. At E the wo
 
 The streaks have a structural cause. An elevation turn adds no roll, so every particle keeps its screen column. An azimuth turn at E's 14° elevation adds roll of about Δaz·sin 14°, which washes the rows out.
 
-An untried remedy is slanted (italic) glyphs, which would spread each stem's column. It was offered to the owner rather than done.
+Slanted (italic) glyphs were the remedy offered to the owner. They were tried and adopted at 14° in `9c0425f`; see the W10 step below.
 
 **Floating without breaking it.** Text particles bob only along their own sight-line from E, so their projection from E never changes. Ambient particles drift in a smooth, small flow field whose amplitude stays well under σ, so the density compensation holds.
 
@@ -127,10 +127,21 @@ One deliberate dark theme, which the artifact contract allows.
       - It re-derived the thresholds and recorded the defect.
       - Its full proof finished before an API limit stopped it: control green, 55 mutants killed, 0 survived, 0 errored.
       - The coordinator re-ran `npm test` (35 of 35) and committed page and gates as `6642bc7`. It was pushed and republished as artifact version 2.
-    - The lessons draft was retired, not committed: `full-relocation` and `no-density-compensation` turn the residual gate red.
-- [ ] W10, owner request 2026-10-11 ("Yes try those slanted letters"):
+    - The lessons draft was retired, not committed: `full-relocation` and `no-density-compensation` turned the residual gate red at `6642bc7`.
+    - Correction after round 3: since `9c0425f` only `no-density-compensation` does; see F25.
+- [x] W10, owner request 2026-10-11 ("Yes try those slanted letters"):
   - Measure slanted glyphs (0°, 10°, 14°, 18°, 22°) against the el±25 column streaks.
   - Adopt one only if it clearly lowers them without hurting E. If adopted, update the gates, run the full proof and commit.
+  - Outcome `9c0425f`:
+    - 14° adopted.
+    - el±25 column residual: 1.79×/2.26× the floor became 1.26×/1.72× (seed 1), −34% over seeds 1–3.
+    - The E ratio held at 1.607 against 1.611.
+    - 18° broke the hidden margin and 22° the streak bound.
+    - The layout gate unslants the mask, and an `upright-letters` mutant is killed.
+  - The full proof ran 56 mutants: 55 killed and 1 survivor, `full-relocation` (β 1.0). The coordinator retired it: with slanted letters β 1.0 measures no streakier than 0.85 relative to the floor.
+  - `npm test` passed 35 of 35. The page was republished as artifact version 3.
+- [x] Review round 3 on `9c0425f`: one major, the alike gate compares only test-only draws, and six minor findings (F23–F29). The page itself has no reveal. Record: [reviews/3_integration.md](reviews/3_integration.md).
+- [ ] W11 (gates and docs, on `main`): F23–F28, and the register and test-comment parts of F29. Then a full proof, a commit and a focused round 4.
 - [ ] Then: a focused review round 3 of everything since round 2, `docs/devlog/summary.md`, and the Outcome section.
 - [ ] Review round 1 (read-only, after integration): an independent review of the integrated revision, covering the gates and the round-0 repairs.
 - [ ] Coordinator: integrate, look at the result at native resolution, merge, push, publish, devlog.
