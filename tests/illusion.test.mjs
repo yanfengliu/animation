@@ -15,10 +15,10 @@
 // Proves: at E the strokes are at least 1.48× brighter than the gaps, relocation lifts that ratio
 // at least 1.35×, and the strokes match across seeds, at t 0, 7.3 and 31 s, at 1280×800 and
 // 390×844, at fov 32 and 80, and when 2D canvas readback (getImageData) returns zeros as
-// anti-fingerprinting browsers do; at E at 1280×800 (t 0) the strokes form two lines, the top one
-// narrower, with a full-height stem at the left end of the top line and the right end of the
-// bottom line and short letters at the other ends, so the text is neither mirrored nor turned
-// 180°; at 390×844 the whole stroke mask, measured across the full width, stays at least 8 px
+// anti-fingerprinting browsers do; at E at 1280×800 (t 0), with the letters' 14° lean undone, the
+// strokes form two lines, the top one narrower, with a full-height stem at the left end of the top
+// line and the right end of the bottom line and short letters at the other ends, so the text is
+// neither mirrored nor turned 180° and its letters lean right by about 14°; at 390×844 the whole stroke mask, measured across the full width, stays at least 8 px
 // inside the frame; the E text layer holds still over time and zoom only scales it; from 25° out
 // (±25° az and el, +60° az) the E strokes are no brighter than the back-view floor + 0.06 (the
 // back view is the floor itself, not a case tested against it); the az+25 text layer, the only
@@ -30,39 +30,43 @@
 // at az±25, az+60 and the back (row and column residual of render − beta-0 render within 1.45×
 // the mean residual at two diagonal control views); the same seed builds the same cloud and
 // another seed a different one.
-// Accepted limit, reported but not gated as hidden: from el±15–25° the text columns show as
-// vertical streaks. At el±25 the column residual is about 1.7–2.2× the floor for the default seed
-// (W8's measurement, accepted by the coordinator with β 0.85). The streak bound at az+25 holds for
-// the default seed: seeds 2 and 3 of the same page measure 1.52 and 1.70 there (seed 1: 1.25).
+// Accepted limit, reported but not gated as hidden: from el±15–25° the text columns show as faint
+// vertical streaks. The letters lean 14° to spread them: at el±25 the column residual is 1.26× and
+// 1.72× the floor for the default seed (1.19 and 1.62 over 0.94; W8's upright letters gave 1.8×
+// and 2.3×, accepted by the coordinator with β 0.85). The streak bound at az+25 holds for the
+// default seed: seeds 2 and 3 of the same page measure 1.42 and 1.64 there (seed 1: 1.19), and
+// seed 3 also exceeds the hidden-from-25° margin there (by 0.069).
 // Does not prove that a person can read the text, or anything about views, times or seeds not
-// listed here, real GPUs, or device pixel ratios above 1.
+// listed here, real GPUs, or device pixel ratios above 1. Nor does it hold β below 1: the streak
+// bound compares with a floor that rises with β as well, so β 1.0 passes it for the default seed.
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startBrowser, newContext, magic, render } from './lib/harness.mjs';
-import { luminance, strokeMask, strokeGapRatio, iou, scaleMask, lineLayout, lightOver, streakResidual } from './lib/image.mjs';
+import { luminance, strokeMask, strokeGapRatio, iou, scaleMask, lineLayout, unslant, lightOver, streakResidual } from './lib/image.mjs';
 
 // Thresholds, each set from the real page and the mutants in tests/mutate.mjs (comments give the
 // measured values, real page first, at 1280×800 and seed 1 unless named; "seeds 1–3" means the
 // real page measured with each of seeds 1, 2 and 3 as the default seed).
-const MIN_RATIO_AT_E = 1.48;     // stroke/gap luminance at E: 1.58–1.69 real (seeds 1–3, both viewports), 1.57 fov 80; 1.25–1.38 β 0.2, 1.34 dolly and no relocation at fov 80, 1.39 no relocation at 390
-const MIN_LIFT = 1.35;           // that ratio over the beta-0 render's on the same mask: 1.49–1.65 real (seeds 1–3), 1.50 fov 80; 1.01–1.21 β 0.2, 1.01–1.04 no relocation
-const MIN_SEED_IOU = 0.5;        // E strokes, default seed vs OTHER_SEED: ≥ 0.70 real (seeds 1–3); 0.34 β 0.2 and 0.41 no relocation, both at 390
-const MIN_TIME_IOU = 0.8;        // E strokes t=0 vs later: 0.95 real; 0.67 when text particles drift across their sight lines
-const MIN_SCALE_IOU = 0.7;       // zoomed strokes vs base strokes scaled: 0.84 (fov 32) and 0.94 (fov 80) real; 0.52 and 0.67 when zoom dollies the eye
-const FLOOR_MARGIN = 0.06;       // excess over the back-view floor from 25° out: ≤ 0.02 real; 0.11 text squeezed halfway to its plane and 0.35 flat text, both at el±25
-const MAX_BACK_FLOOR = 1.25;     // the back-view floor itself: 1.13–1.17 real (seeds 1–3); 1.30 relocation without density compensation, 1.36 flat text
-const MAX_SMEAR_E_IOU = 0.25;    // az+25 text layer vs the E strokes: 0.15 real, 0.17 flat text (a coarse guard; the seed check tells them apart)
-const MAX_SMEAR_SEED_IOU = 0.3;  // az+25 text layer, seed vs seed: 0.12 real, 0.58 flat text
-const LIGHT_BAND = [0.9, 1.1];   // text / as-ambient light of the same particles: 0.99–1.01 real (seeds 1–3, every view); at E 1.25 with text 1.25× brighter near E, 1.59 with text sprites 1.25× wider, 1.18 with their blur cut 75%, and 1.39–1.41 at every view with text 1.4× brighter everywhere
-const MAX_WARMTH_GAP = 0.03;     // |text − as-ambient warmth|: ≤ 0.007 real (seeds 1–3); 0.124 at E and 0.094 at 3° with a 30% gold tint near E
-const SIZE_BAND = [0.85, 1.15];  // text / as-ambient effective sprite area at SPARSE_BETA: 0.96–1.02 real (seeds 1–3); 1.51 at E and 1.37 at 3° with text sprites 1.25× wider near E
-const SCENE_BAND = [0.85, 1.15]; // scene particle light at E and 3° over its mean at the far views: 0.96 real; 1.35 with every particle 1.4× brighter near E
-const STREAK_K = 1.45;           // streak residual over the floor at az±25, az+60, back: ≤ 1.28 real (az+25 rows); 1.64 at az+25 with β 1.0 and without density compensation
-const MAX_STREAK_FLOOR = 1.3;    // the floor itself: 0.97 real (0.88–0.90 seeds 2–3); 2.17 flat text
-const LINE_WIDTH_RATIO = [0.76, 0.92]; // top/bottom line width at E: 0.850 real, 1.18 turned 180°
-const FULL_STEM = 0.8;           // end-strip height / line height at "h" and "d": 0.96 and 0.95 real; a mirrored frame puts "o" and "w" there
-const SHORT_END = 0.7;           // the same at "o" and "w": 0.53 and 0.56 real; a mirrored frame puts the "h" and "d" stems there
-const MIN_FIT_MARGIN = 8;        // px between the strokes and the frame edges at 390×844: 30 real, 0 without the phone widening
+const MIN_RATIO_AT_E = 1.48;     // stroke/gap luminance at E: 1.58–1.68 real (seeds 1–3, both viewports), 1.55–1.59 fov 80; 1.25–1.37 β 0.2 (1.69 at fov 32, where its lift fails), 1.33 dolly and 1.34 no relocation at fov 80, 1.39 no relocation at 390
+const MIN_LIFT = 1.35;           // that ratio over the beta-0 render's on the same mask: 1.48–1.61 real (seeds 1–3), 1.51–1.55 fov 80; 1.01–1.20 β 0.2, 1.01–1.03 no relocation
+const MIN_SEED_IOU = 0.5;        // E strokes, default seed vs OTHER_SEED: ≥ 0.70 real (seeds 1–3); 0.37 β 0.2 and 0.42 no relocation, both at 390
+const MIN_TIME_IOU = 0.8;        // E strokes t=0 vs later: 0.95 real; 0.66 when text particles drift across their sight lines
+const MIN_SCALE_IOU = 0.7;       // zoomed strokes vs base strokes scaled: 0.84–0.89 (fov 32) and 0.95 (fov 80) real (seeds 1–3); 0.53 and 0.66 when zoom dollies the eye
+const FLOOR_MARGIN = 0.06;       // excess over the back-view floor from 25° out: 0.028 real (az−25; 0.037 seed 2, 0.069 seed 3 at az+25); 0.51 flat text at el+25 (0.11 for text squeezed halfway to its plane, on the upright page); 0.058 with β 1.0
+const MAX_BACK_FLOOR = 1.25;     // the back-view floor itself: 1.12–1.14 real (seeds 1–3); 1.26 relocation without density compensation, 1.24 flat text (which fails FLOOR_MARGIN)
+const MAX_SMEAR_E_IOU = 0.25;    // az+25 text layer vs the E strokes: 0.12–0.15 real (seeds 1–3), 0.16 flat text (a coarse guard; the seed check tells them apart)
+const MAX_SMEAR_SEED_IOU = 0.3;  // az+25 text layer, seed vs seed: 0.12 real (seeds 1–3), 0.57 flat text
+const LIGHT_BAND = [0.9, 1.1];   // text / as-ambient light of the same particles: 0.99–1.01 real (seeds 1–3, every view); at E 1.24 with text 1.25× brighter near E, 1.58 with text sprites 1.25× wider, 1.17 with their blur cut 75%, and 1.38–1.41 at every view with text 1.4× brighter everywhere
+const MAX_WARMTH_GAP = 0.03;     // |text − as-ambient warmth|: ≤ 0.005 real (seeds 1–3); 0.126 at E and 0.096 at 3° with a 30% gold tint near E
+const SIZE_BAND = [0.85, 1.15];  // text / as-ambient effective sprite area at SPARSE_BETA: 0.98–1.01 real (seeds 1–3); 1.49 at E and 1.34 at 3° with text sprites 1.25× wider near E
+const SCENE_BAND = [0.85, 1.15]; // scene particle light at E and 3° over its mean at the far views: 0.95–1.06 real (seeds 1–3); 1.35 with every particle 1.4× brighter near E
+const STREAK_K = 1.45;           // streak residual over the floor at az±25, az+60, back: ≤ 1.29 real (az+60 row); 1.74 at az+25 without density compensation. β 1.0 gives 1.28, since its floor rises too (1.07); upright letters gave 1.64 at seed 1, but 1.62 and 1.88 against 1.73 and 1.88 at β 0.85 for seeds 2–3, so this bound never held β below 1
+const MAX_STREAK_FLOOR = 1.3;    // the floor itself: 0.94 real (0.93–0.95 seeds 2–3); 2.12 flat text
+const SLANT_DEG = 14;            // the letters' lean (SLANT in index.html), undone before the layout is measured
+const LINE_WIDTH_RATIO = [0.76, 0.92]; // top/bottom line width at E, lean undone: 0.857 real, 1.155 turned 180°
+const FULL_STEM = 0.8;           // end-strip height / line height at "h" and "d", lean undone: 0.94 and 0.96 real (0.94–0.99 seeds 1–3); 0.44 and 0.60 mirrored (its letters lean left, "o" and "w" are there), 0.63 and 0.58 with upright letters (0.68–0.75 at "h", seeds 2–3)
+const SHORT_END = 0.7;           // the same at "o" and "w": 0.49 and 0.53 real; it catches no mutant alone, since a mirrored frame's stems lean the wrong way and fail FULL_STEM first
+const MIN_FIT_MARGIN = 8;        // px between the strokes and the frame edges at 390×844: 33–35 real (seeds 1–3), 0 without the phone widening
 const SPARSE_BETA = 0.02;        // 121 text particles: separate sprites, so the effective area measures sprite size
 const OTHER_SEED = 8;
 const DIM = { blur: 5, bandpass: 15 }; // masks of off-angle text layers: sky removed, dots merged
@@ -160,10 +164,13 @@ test('legible at E at 390×844', async (t) => {
 // The layout comes from the page's glyph geometry in x-heights: "hello" is 4.55 wide and "world"
 // 5.42, both lines 1.71 tall (ascender 1.55 plus the 0.16 stroke). "h" opens the top line and "d"
 // closes the bottom line with full-height stems; "o" closes the top line and "w" opens the bottom
-// line at x-height only (about 0.6 and 0.4 of the line height in a 0.15-line-height strip).
+// line at x-height only (about 0.6 and 0.4 of the line height in a 0.15-line-height strip). The
+// letters lean right by SLANT_DEG, so the strokes are measured with that lean undone: then the
+// stems stand upright in their end strips, while letters that lean the other way (a mirrored
+// frame) or not at all (upright letters) leave those strips short.
 test('at E the message reads "hello" over "world", left to right', async (t) => {
   const m = await strokesAt(wide, at(0, 0, '&t=0'));
-  const L = lineLayout(m);
+  const L = lineLayout(unslant(m, Math.tan((SLANT_DEG * Math.PI) / 180)));
   assert.ok(L, `the E strokes (box ${JSON.stringify(m.box)}) have no empty row between two lines`);
   const { top, bottom } = L;
   const widthRatio = top.width / bottom.width;
@@ -171,8 +178,8 @@ test('at E the message reads "hello" over "world", left to right', async (t) => 
   t.diagnostic(`gap ${L.gap} px; top ${JSON.stringify(top)}; bottom ${JSON.stringify(bottom)}; width ratio ${widthRatio.toFixed(3)}; end heights / line height ${Object.entries(ends).map(([k, v]) => `${k} ${v.toFixed(2)}`).join(', ')}`);
   assert.ok(L.gap >= 3, `the two lines are only ${L.gap} px apart`);
   assert.ok(widthRatio >= LINE_WIDTH_RATIO[0] && widthRatio <= LINE_WIDTH_RATIO[1], `the top line is ${top.width} px wide and the bottom line ${bottom.width} px (ratio ${widthRatio.toFixed(3)}); "hello" over "world" gives about 0.84, so it must be within ${LINE_WIDTH_RATIO.join('–')} (a frame turned 180° gives about 1.19)`);
-  assert.ok(ends.hLeft >= FULL_STEM, `the left end of the top line is only ${ends.hLeft.toFixed(2)} of the line height; the "h" stem there must reach at least ${FULL_STEM} (a mirrored frame puts "o" there)`);
-  assert.ok(ends.dRight >= FULL_STEM, `the right end of the bottom line is only ${ends.dRight.toFixed(2)} of the line height; the "d" stem there must reach at least ${FULL_STEM} (a mirrored frame puts "w" there)`);
+  assert.ok(ends.hLeft >= FULL_STEM, `with the letters' ${SLANT_DEG}° lean undone, the left end of the top line is only ${ends.hLeft.toFixed(2)} of the line height; the "h" stem there must reach at least ${FULL_STEM} (a mirrored frame puts "o" there, and letters that do not lean about ${SLANT_DEG}° leave the stem slanted across the strip)`);
+  assert.ok(ends.dRight >= FULL_STEM, `with the letters' ${SLANT_DEG}° lean undone, the right end of the bottom line is only ${ends.dRight.toFixed(2)} of the line height; the "d" stem there must reach at least ${FULL_STEM} (a mirrored frame puts "w" there, and letters that do not lean about ${SLANT_DEG}° leave the stem slanted across the strip)`);
   assert.ok(ends.oRight <= SHORT_END, `the right end of the top line is ${ends.oRight.toFixed(2)} of the line height; the "o" there must stay at or below ${SHORT_END}`);
   assert.ok(ends.wLeft <= SHORT_END, `the left end of the bottom line is ${ends.wLeft.toFixed(2)} of the line height; the "w" there must stay at or below ${SHORT_END}`);
 });

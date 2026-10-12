@@ -4,7 +4,7 @@
 
 An anamorphic particle animation. `index.html` is one self-contained WebGL2 page.
 
-A cloud of glowing particles drifts in the air. From one secret viewpoint some of the particles line up to read "hello" above "world"; from everywhere else it looks like a plain cloud.
+A cloud of glowing particles drifts in the air. From one secret viewpoint some of the particles line up to read "hello" above "world" in letters that lean right 14°; from everywhere else it looks like a plain cloud.
 
 The viewer changes the angle by dragging, and an idle camera tour passes through the viewpoint.
 
@@ -90,16 +90,17 @@ Node 24 (`.nvmrc`). Each command below was run on Windows 11 with Node 24.18.1 o
   - A mutant counts as killed only by a CHECK. One with only ERRORs is "errored". One with 0 green tests is flagged, since it may break the page wholesale rather than the one behaviour it names.
   - It exits 1 on any survivor, errored or flagged mutant.
   - Tree mutants are copies of the repo without `.git`, `node_modules`, `tmp`, test output and `.claude/worktrees`, so any file a command names is there too. Each is deleted once scanned.
-  - Run it after changing a gate or the page. The full run (48 mutants: 35 page, 13 tree) takes about 29 minutes: 28 were measured with 44 mutants, and the one page mutant added since takes about 45 s. So run only the mutants a change touches by name, and keep it the only browser workload while it runs.
+  - Run it after changing a gate or the page. The full run (55 mutants: 42 page, 13 tree) took about 37 minutes on 2026-10-12, about 47 s per page mutant. A β 1.0 mutant was retired that day: with slanted letters it measures no streakier than the shipped β 0.85 at the gated views, so nothing pins β below 1. So run only the mutants a change touches by name, and keep it the only browser workload while it runs.
 
 What the suite proves (each file's header states its exact bound):
 
 - `tests/illusion.test.mjs`:
   - At E the "hello world" strokes are at least 1.48× brighter than the gaps between them, at t 0, 7.3 and 31 s, at 1280×800 and 390×844, at fov 32 and 80, and when canvas readback returns zeros.
-    - Relocation must also lift that ratio at least 1.35× over the same view rendered with `beta=0`, because the ratio alone has a baseline: with no relocation it is still 1.52 at 1280×800.
+    - Relocation must also lift that ratio at least 1.35× over the same view rendered with `beta=0`, because the ratio alone has a baseline: with no relocation it is still 1.53 at 1280×800.
     - The stroke shapes are the same for two seeds, so they come from the message, not the particle draw.
     - A zoomed view's mask keeps the stroke area the zoom predicts, so it cannot fatten where sprites merge at fov 80.
   - At E at 1280×800 the strokes form two lines, the top one narrower, with a full-height stem at the left end of the top line ("h") and at the right end of the bottom line ("d"). So the text is neither mirrored nor turned 180°.
+    - The test undoes the letters' 14° lean before it measures the ends. So letters that lean the other way (a mirrored frame) or stand upright also leave those stems short and fail it.
   - At 390×844 the whole text block, measured across the full width, stays at least 8 px inside the frame.
   - Every particle renders alike at every angle (owner directive, 2026-10-11).
     - At E, 3° from E (el+3), az+25, el−25 and the back, the text particles carry the light (within 10%), colour (warmth within 0.03) and sprite size (within 15%) of the same particles drawn as ambient.
@@ -109,7 +110,7 @@ What the suite proves (each file's header states its exact bound):
   - From 25° out (±25° az and el, +60° az) the E strokes are no brighter than the back-view floor + 0.06, and that floor stays below 1.25. The back view is the floor, not a case tested against it.
   - The az+25 text layer is a smear that changes with the seed.
   - Relocation leaves no streaks at az±25, az+60 or the back. The row and column residual of a render minus its `beta=0` twin (high-passed profiles over the cloud's own profile noise) stays within 1.45× the floor, the mean residual at two diagonal control views in the same run.
-  - Accepted limit, reported each run but not gated as hidden: from el±15–25° the text columns show as vertical streaks (column residual about 1.7–2.2× the floor at el±25). The az+25 bound holds for the default seed: seeds 2 and 3 of the same page measure 1.52 and 1.70 there, against 1.25 for seed 1.
+  - Accepted limit, reported each run but not gated as hidden: from el±15–25° the text columns show as faint vertical streaks. The 14° lean spreads them: at el±25 the column residual is 1.26× and 1.72× the floor, down from 1.8× and 2.3× with upright letters. The az+25 bound holds for the default seed: seeds 2 and 3 of the same page measure 1.42 and 1.64 there, against 1.19 for seed 1, and seed 3 also exceeds the hidden-from-25° margin at az+25.
   - The same seed builds the same cloud.
 - `tests/controls.test.mjs`: real mouse, wheel, keyboard and CDP touch input on a 640×400 page. Covers drag signs, rate and the ±70° clamp; zoom that changes only the field of view; arrow keys; the "Find the angle" glide and its cancel; snap near E; zooming during a glide or snap, which takes at once and holds when the move lands; touch drag and pinch, including a pinch at E and a pinch after a deliberate 17 px drag away from E, which must not snap; the tour (moves at load, stops on a press, still stopped 9 s later); coasting; and reduced motion (no tour, no coast once switched on in the same page, "Find the angle" jumps).
 - `tests/page.test.mjs`: no console or page errors; the only request is the Google Fonts stylesheet; if it never answers, the page still draws within 2 s of the time the same load takes with it answered (both timed in the test); no horizontal overflow at 390 px; Tab reaches the canvas and then "Find the angle" with focus styles that change pixels on screen; keys work on the focused canvas; Chromium's accessibility tree exposes the canvas as a focusable application with a role description and a name; the no-WebGL2 message. Each check closes its browser context as soon as it is done.
@@ -124,7 +125,7 @@ What the suite proves (each file's header states its exact bound):
   - Only Playwright code builds `file:` URLs, including from `import.meta.url` outside `fileURLToPath`.
   - Child processes start only Node, in files and in commands such as `node -e`, whether `child_process` is imported whole, by name, renamed or destructured.
 
-Bound: one engine, headless Chromium 153 with SwiftShader WebGL2, device pixel ratio 1 for the image gates, and only the listed views, times, seeds, `beta` values and inputs. The image gates measure luminance and shape, not whether a person can read the text. A reveal confined to angles between the measured views (for example only 8–20° from E) would pass them. No screen reader was available, so the accessibility check reads Chromium's tree, not what NVDA or JAWS do with it.
+Bound: one engine, headless Chromium 153 with SwiftShader WebGL2, device pixel ratio 1 for the image gates, and only the listed views, times, seeds, `beta` values and inputs. The image gates measure luminance and shape, not whether a person can read the text. A reveal confined to angles between the measured views (for example only 8–20° from E) would pass them. Nor do they hold β below 1: the streak bound compares with a floor that rises with β too, so β 1.0 passes it for the default seed (1.28× against 1.29× at 0.85). No screen reader was available, so the accessibility check reads Chromium's tree, not what NVDA or JAWS do with it.
 
 The hygiene scan's blind spots:
 - code assembled at run time: `eval`, strings or names built from pieces, computed keys such as `cp['exec']`, a launch method reached by destructuring;
@@ -142,6 +143,7 @@ It still flags a few harmless forms, listed in its header: a `pause()` on a non-
 - Every particle renders the same way at every camera angle: text and ambient particles get the same light, colour, size and focus at E and everywhere else, and nothing in the scene brightens as the camera nears E. The words become obvious only because the particles line up there (owner directive, 2026-10-11: "They need to be glowing consistently no matter what angle. The words should be entirely depending on the right angle to be obvious.").
 - Text particles move only along their own sight-line from the secret eye, so their projection from it never changes. Ambient drift plus wobble is at most about 0.52 world units. Seen from E that is 0.42σ at the text plane and less beyond it (σ is the relocation width in the plan), but up to about 0.9σ for the nearest particles. So the density that hides the text holds closely at and beyond the plane and only roughly in front of it.
 - Zoom changes the field of view only. The eye stays on the orbit sphere with world-up roll, because moving it breaks the illusion.
+- The letters lean right by `SLANT` (14°), each line sheared about its own baseline. An elevation turn keeps every particle's screen column, so upright stems would show above and below E as vertical streaks; leaning ones spread over many columns. The layout gate undoes the lean before it measures, so `SLANT_DEG` in `tests/illusion.test.mjs` changes together with `SLANT`.
 - The test contract changes only together with the gates. Query parameters: `az`, `el`, `fov` (degrees), `t` (freezes the particle clock), `tour=0`, `layer=text|ambient`, `seed`, and the test-only `beta`, a number from 0 to 1 that sets the peak relocation chance (other values keep the default 0.85). The base cloud is the same for every `beta`, and `beta=0` relocates nothing, so a render minus its `beta=0` twin holds only what relocation changed. Read-only `window.__cloud`: `ready`, `frame`, `magic`, `view()`, `alignment()`, `mode()`, `counts`. DOM ids: `#scene`, `#find`, `#readout`, `#hint`, `#nogl`. `#scene` is exposed as a focusable `application` with a role description and a name.
 - The page doubles as a claude.ai artifact: one deliberate dark theme with colour tokens on `:root`, no `#key=value` hash state, and it works at 390 px wide.
 

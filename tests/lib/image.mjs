@@ -188,6 +188,23 @@ export function lineLayout(m, stripFrac = 0.15) {
   return { gap: best.b - best.a + 1, top: line(box.y0, best.a - 1), bottom: line(best.b + 1, box.y1) };
 }
 
+// A stroke mask with a rightward lean undone, for lineLayout: each row moves left by its height
+// above the image's centre row times `lean` (px across per px up, rounded to whole pixels), so
+// stems that lean by atan(lean) stand upright again. A row's own pixels keep their order.
+export function unslant(m, lean) {
+  const { W, H, mask } = m, cy = (H - 1) / 2, out = new Uint8Array(W * H);
+  let x0 = W, x1 = -1, y0 = H, y1 = -1;
+  for (let y = 0; y < H; y++) {
+    const d = Math.round((cy - y) * lean);
+    for (let x = Math.max(0, -d); x < Math.min(W, W - d); x++) {
+      if (!mask[y * W + x + d]) continue;
+      out[y * W + x] = 1;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+  }
+  return { W, H, mask: out, box: { x0, x1, y0, y1 } };
+}
+
 // Mean luminance of `lum` on the strokes divided by the mean on the gap.
 export function strokeGapRatio(lum, m) {
   if (!m.strokes || !m.gaps) return NaN;

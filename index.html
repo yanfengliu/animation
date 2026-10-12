@@ -93,8 +93,8 @@ const ZOOM_MIN = 0.5, ZOOM_MAX = 4;                // zoom scales tan(fov/2); th
 const N_TOTAL = 18000, OUTLIER_SHARE = 0.05;
 // Peak chance that a particle becomes text. Text and ambient particles look alike, so the words
 // show at E by density alone: about 3× the ambient density on the strokes at 0.85. The cost:
-// turning the camera keeps the text rows (azimuth) or columns (elevation) as streaks, and the
-// columns still show 25° away in elevation (docs/work/0_hello-world-cloud, W8's measurements).
+// turning the camera keeps the text rows (azimuth) or columns (elevation) as faint streaks; the
+// letters lean (SLANT) so that the columns spread (measurements in docs/work/0_hello-world-cloud).
 const BETA_DEFAULT = 0.85;
 const TEXT_SCALE = 2.65;                           // world units per x-height on the text plane
 const SWELL = 0.8;                                 // bob along sight lines from E, world units
@@ -158,8 +158,12 @@ const E_UP = cross(E_RIGHT, E_FWD);
 // ------------------------------------------------------------------ glyphs
 // Monoline geometric lowercase in x-height units: baseline y = 0, x-height 1, ascender 1.55,
 // bowls are circles of radius 0.5. 'L' is a polyline; 'A' is an arc (cx, cy, r, from°, to°),
-// running clockwise when to° < from°. Side types set the spacing between neighbours.
+// running clockwise when to° < from°. Side types set the spacing between neighbours. The glyphs
+// are drawn upright here and lean right by SLANT when they are rasterised.
 const ASC = 1.55, STROKE = 0.16, LINE_GAP = 2.05, BASELINE = 0.36;
+// Italic lean, degrees. An elevation turn keeps every particle's screen column, so upright stems
+// would show above and below E as vertical streaks; a leaning stem spreads over many columns.
+const SLANT = 14;
 const GLYPHS = {
   h: { w: 1, l: 's', r: 's', d: [['L', 0, 0, 0, ASC], ['A', 0.5, 0.5, 0.5, 180, 0], ['L', 1, 0.5, 1, 0]] },
   e: { w: 1, l: 'o', r: 'o', d: [['L', 0, 0.5, 1, 0.5], ['A', 0.5, 0.5, 0.5, 0, 318]] },
@@ -185,30 +189,48 @@ function buildMask() {
     }
     return { items, w: x, y: BASELINE - li * LINE_GAP };
   });
-  const halfW = Math.max(...lines.map((l) => l.w)) / 2 + STROKE / 2;
+  // Each line leans about its own baseline: a glyph point (x, y) moves to (x + y·lean, y), so the
+  // stems lean and every stroke keeps its horizontal width, as in an oblique type. The ink spans the
+  // leaning centre lines (polyline corners, arcs sampled every degree) plus a leaning round cap's
+  // half-width; the block then shifts so that its ink is centred on x = 0.
+  const lean = Math.tan(SLANT * DEG), half = STROKE / 2;
+  let inkL = Infinity, inkR = -Infinity;
+  for (const line of lines) {
+    let l = Infinity, r = -Infinity;
+    const reach = (x) => { l = Math.min(l, x); r = Math.max(r, x); };
+    for (const { g, x } of line.items) for (const s of g.d) {
+      if (s[0] === 'L') for (let k = 1; k + 1 < s.length; k += 2) reach(x + (s[k] + s[k + 1] * lean));
+      else for (let a = Math.min(s[4], s[5]); a <= Math.max(s[4], s[5]); a++) reach(x + (s[1] + s[3] * Math.cos(a * DEG) + (s[2] + s[3] * Math.sin(a * DEG)) * lean));
+    }
+    inkL = Math.min(inkL, l - line.w / 2); inkR = Math.max(inkR, r - line.w / 2);
+  }
+  const shift = -(inkL + inkR) / 2, halfW = (inkR - inkL) / 2 + half * Math.hypot(1, lean);
   const top = BASELINE + ASC + STROKE / 2, bottom = BASELINE - LINE_GAP - STROKE / 2;
   const pad = 1.6;                                 // more than the blur's reach
   const x0 = -halfW - pad, y1 = top + pad;
   const W = Math.ceil((2 * halfW + 2 * pad) * PX / CF) * CF;
   const H = Math.ceil((top - bottom + 2 * pad) * PX / CF) * CF;
   // S comes straight from the geometry, so a seed builds the same cloud in every browser: a pixel
-  // is inside when its centre lies within half a stroke of a line or arc (round caps and joins).
-  const S = new Uint8Array(W * H), half = STROKE / 2;
-  const mark = (minX, maxX, minY, maxY, dist) => {
-    const px0 = Math.max(0, Math.floor((minX - half - x0) * PX)), px1 = Math.min(W - 1, Math.ceil((maxX + half - x0) * PX));
+  // is inside when its centre, leaned back upright about the line's baseline `base`, lies within
+  // half a stroke of a line or arc (round caps and joins).
+  const S = new Uint8Array(W * H);
+  const mark = (base, minX, maxX, minY, maxY, dist) => {
+    const lo = (minY - half - base) * lean, hi = (maxY + half - base) * lean;   // the lean at the box's bottom and top
+    const px0 = Math.max(0, Math.floor((minX - half + Math.min(lo, hi) - x0) * PX)), px1 = Math.min(W - 1, Math.ceil((maxX + half + Math.max(lo, hi) - x0) * PX));
     const py0 = Math.max(0, Math.floor((y1 - maxY - half) * PX)), py1 = Math.min(H - 1, Math.ceil((y1 - minY + half) * PX));
-    for (let py = py0; py <= py1; py++) for (let px = px0; px <= px1; px++) {
-      if (dist(x0 + (px + 0.5) / PX, y1 - (py + 0.5) / PX) <= half) S[py * W + px] = 1;
+    for (let py = py0; py <= py1; py++) {
+      const uy = y1 - (py + 0.5) / PX, back = (uy - base) * lean;
+      for (let px = px0; px <= px1; px++) if (dist(x0 + (px + 0.5) / PX - back, uy) <= half) S[py * W + px] = 1;
     }
   };
   for (const line of lines) {
     for (const { g, x } of line.items) {
-      const ox = x - line.w / 2, oy = line.y;
+      const ox = x - line.w / 2 + shift, oy = line.y;
       for (const s of g.d) {
         if (s[0] === 'L') {
           for (let k = 1; k + 3 < s.length; k += 2) {
             const ax = ox + s[k], ay = oy + s[k + 1], dx = s[k + 2] - s[k], dy = s[k + 3] - s[k + 1];
-            mark(Math.min(ax, ax + dx), Math.max(ax, ax + dx), Math.min(ay, ay + dy), Math.max(ay, ay + dy), (px, py) => {
+            mark(oy, Math.min(ax, ax + dx), Math.max(ax, ax + dx), Math.min(ay, ay + dy), Math.max(ay, ay + dy), (px, py) => {
               const t = clamp(((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy), 0, 1);
               return Math.hypot(px - ax - t * dx, py - ay - t * dy);
             });
@@ -217,7 +239,7 @@ function buildMask() {
           const [, c0, c1, r, a0, a1] = s, cx = ox + c0, cy = oy + c1;
           const start = Math.min(a0, a1), span = Math.abs(a1 - a0);   // degrees, anticlockwise from start
           const ex = (a) => cx + r * Math.cos(a * DEG), ey = (a) => cy + r * Math.sin(a * DEG);
-          mark(cx - r, cx + r, cy - r, cy + r, (px, py) => {
+          mark(oy, cx - r, cx + r, cy - r, cy + r, (px, py) => {
             const ang = ((Math.atan2(py - cy, px - cx) / DEG - start) % 360 + 360) % 360;
             if (span >= 360 || ang <= span) return Math.abs(Math.hypot(px - cx, py - cy) - r);
             return Math.min(Math.hypot(px - ex(a0), py - ey(a0)), Math.hypot(px - ex(a1), py - ey(a1)));

@@ -86,8 +86,9 @@ function preset(name) {
   for (const vp of ['1280x800', '390x844']) {
     const tag = vp.split('x')[0];
     for (const t of ['0', '7.3', '31']) magic.push(at(0, 0, { viewport: vp, t, name: `magic_${tag}_t${t}` }));
-    // Zoom in as far as the text block still fits (the phone's base FOV is about 66 degrees).
-    magic.push(at(0, 0, { viewport: vp, fov: vp === '1280x800' ? '32' : '58', name: `magic_${tag}_zoomin` }));
+    // Zoom in as far as the text block still fits (the phone's base FOV is about 67 degrees; at 60
+    // the leaning block keeps about 11 px to each side).
+    magic.push(at(0, 0, { viewport: vp, fov: vp === '1280x800' ? '32' : '60', name: `magic_${tag}_zoomin` }));
     magic.push(at(0, 0, { viewport: vp, fov: vp === '1280x800' ? '80' : '95', name: `magic_${tag}_zoomout` }));
   }
   magic.push(at(0, 0, { layer: 'text', name: 'magic_1280_textlayer' }));

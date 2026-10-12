@@ -61,7 +61,7 @@ Defects the owner reported, each with the symptom as they saw it, what the inves
 
 **Root cause:** legibility was bought with angle-dependent rendering instead of geometry. The words read at E because the text particles lit up there, not only because they lined up.
 
-**Fix (W8, committed together with the new gate):** both uniforms and the gold entry are gone, and every particle uses one colour, size and focus rule at every angle. β rose to 0.85 and the depth-of-field aperture fell to 0.14, so the words read at E by density alone (stroke/gap 1.58–1.68). The coordinator accepted the cost: from el±15–25° the text columns show as vertical streaks.
+**Fix (W8, committed together with the new gate):** both uniforms and the gold entry are gone, and every particle uses one colour, size and focus rule at every angle. β rose to 0.85 and the depth-of-field aperture fell to 0.14, so the words read at E by density alone (stroke/gap 1.58–1.68). The coordinator accepted the cost: from el±15–25° the text columns show as vertical streaks. W10 then slanted the letters 14°, which spreads those columns: at el±25 the column residual fell from 1.74 and 2.20 to 1.19 and 1.62 for the default seed, with the stroke/gap ratio at E unchanged (1.61 at 1280×800, 1.67 at 390×844).
 
 **How it is now checked:**
 
