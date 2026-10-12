@@ -122,7 +122,16 @@ One deliberate dark theme, which the artifact contract allows.
     - Coordinator looked at native resolution: E at 1280 reads from positions alone; el+25 shows faint vertical stem streaks, an accepted cost.
     - `npm test` on this page: 30 of 35 pass. The 5 failures are the reveal gate and the thresholds tuned to the old page; W9 re-derives them.
   - W9 (gates): replace the reveal gate with "text and ambient particles render alike at every angle", re-derive the illusion thresholds, record the owner-reported defect in the register, and run the full mutation proof once.
-- [ ] Then: a focused review round 3, `docs/devlog/summary.md`, the lessons entry (it now has to drop "let the reveal effects carry legibility"), and the Outcome section.
+    - Done:
+      - W9 replaced the reveal gate with "every particle renders alike at every angle" and added a relocation-residual gate (az±25, az+60, back).
+      - It re-derived the thresholds and recorded the defect.
+      - Its full proof finished before an API limit stopped it: control green, 55 mutants killed, 0 survived, 0 errored.
+      - The coordinator re-ran `npm test` (35 of 35) and committed page and gates as `6642bc7`. It was pushed and republished as artifact version 2.
+    - The lessons draft was retired, not committed: `full-relocation` and `no-density-compensation` turn the residual gate red.
+- [ ] W10, owner request 2026-10-11 ("Yes try those slanted letters"):
+  - Measure slanted glyphs (0°, 10°, 14°, 18°, 22°) against the el±25 column streaks.
+  - Adopt one only if it clearly lowers them without hurting E. If adopted, update the gates, run the full proof and commit.
+- [ ] Then: a focused review round 3 of everything since round 2, `docs/devlog/summary.md`, and the Outcome section.
 - [ ] Review round 1 (read-only, after integration): an independent review of the integrated revision, covering the gates and the round-0 repairs.
 - [ ] Coordinator: integrate, look at the result at native resolution, merge, push, publish, devlog.
 
