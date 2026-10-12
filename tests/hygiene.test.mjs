@@ -28,12 +28,16 @@
 //   modes (also through a version-pinned playwright@<version>); no Playwright config picks a
 //   browser channel;
 // - nothing pauses a receiver that can be a page: one whose chain names "page" (page.x,
-//   this.page, newPage(), pages()[0]) or uses a name the same file binds from newPage, pages() or
-//   waitForEvent. Pauses on sockets, requests, streams, media and animations pass;
+//   this.page, newPage(), pages()[0]) or uses a name that can hold one. The same file declares
+//   such a name from a statement that calls newPage, pages() or waitForEvent, alone or in a
+//   destructuring pattern, or assigns it, awaited or not, from a bare name that can hold a page or
+//   names "page". Pauses on sockets, requests, streams, media and animations pass;
 // - no shell command (npm script, shell file, settings command) runs an opener where a command
-//   starts: at a line start, after ; & | ( or a backtick, or after a shell's command switch
-//   (cmd /c or /k, sh -c or a combined switch such as -lc, PowerShell -Command). The command word
-//   may be quoted there; a quote anywhere else is text (echo "open tasks: 3");
+//   starts: at a line start, after ; & | ( or a backtick, after a shell's command switch (cmd /c
+//   or /k, sh -c or a combined switch such as -lc, PowerShell -Command), or after powershell or
+//   powershell.exe and its switches, since Windows PowerShell runs its first other argument as a
+//   command. The command word may be quoted there; a quote anywhere else is text (echo "open
+//   tasks: 3");
 // - a file or command that builds a file: URL (a path-to-URL conversion, a quoted file: string, or
 //   import.meta's url or resolve anywhere but inside fileURLToPath) imports Playwright;
 // - the child-process module, in files and in commands (node -e), is reached only through import
@@ -41,12 +45,15 @@
 //   binding from it is used only by a direct call, and those calls start only Node (exec never;
 //   execFile and spawn only with process.execPath).
 // Known false positives: a pause on a receiver that is not a page but whose chain names "page"
-// (pageStream, a call with a page argument); a program's own -c switch before a quoted opener word
-// (git commit -c "start ..."); a launch method's name or the child-process module's name inside a
-// string.
+// (pageStream, a call with a page argument), or on a name bound as above that holds no page (a
+// name declared with no semicolon before a later newPage call, or assigned from pageStream); a
+// program's own -c switch before a quoted opener word (git commit -c "start ..."); an opener word
+// as an argument after powershell's -File script; a launch method's name or the child-process
+// module's name inside a string.
 // Blind spots: code assembled at run time (eval, new Function, strings or names built from pieces,
 // computed keys such as cp['exec'], a launch method reached by destructuring or a computed key); a
-// page under a name without "page" that the file does not bind itself (a parameter called tab);
+// page under a name without "page" that the file does not bind itself (a parameter called tab) or
+// reaches only through a member or a call (const p = pick(context); p.pause());
 // programs that open a browser by default but are not named here; files of other types; repo files
 // outside the scanned folders that only code names (a path passed to a Node child process); files
 // outside the scanned paths that no command names (docs/, tmp/, node_modules and its install
@@ -266,10 +273,27 @@ const BANNED = [
 ];
 // A pause call on a page opens Playwright's inspector. Sockets, requests, streams, media elements
 // and animations have a pause method too, so a pause counts only when its receiver can be a page:
-// its chain names "page", or it uses a name the same file binds from newPage, pages() or
-// waitForEvent.
+// its chain names "page", or it uses a name that can hold one. A name can hold a page when the
+// same file declares it, alone or inside a destructuring pattern, from a statement that calls
+// newPage, pages() or waitForEvent (const [popup] = await Promise.all([page.waitForEvent('popup'),
+// ...])), or assigns it, awaited or not, from a bare name that can hold a page or names "page"
+// (const popup = await popupPromise).
 const PAUSE = /\??\.\s*pa[u]se\s*(?:\?\.\s*)?\(/g;
-const PAGE_BINDING = /\b(?:const|let|var)\s+([\w$]+)\s*=[^;\n]*?\b(?:newPage|pages|waitForEvent)\s*\(/g;
+const PATTERN = String.raw`([\w$]+|\[[^\]=]*\]|\{[^}=]*\})`;
+const PAGE_BINDING = new RegExp(String.raw`\b(?:const|let|var)\s+` + PATTERN + String.raw`\s*=[^;]*?\b(?:newPage|pages|waitForEvent)\s*\(`, 'g');
+const ALIAS = new RegExp(String.raw`(?:\b(?:const|let|var)\s+)?` + PATTERN + String.raw`\s*(?<![=!<>])=(?![=>])\s*(?:await\s+)?([\w$]+)\s*(?=[;\n,)\]}]|$)`, 'g');
+function pageNames(text) {
+  const names = new Set(), words = (s) => [...s.matchAll(/[\w$]+/g)].map(([w]) => w);
+  for (const m of text.matchAll(PAGE_BINDING)) for (const w of words(m[1])) names.add(w);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const m of text.matchAll(ALIAS)) {
+      if (!(names.has(m[2]) || /page/i.test(m[2]))) continue;
+      for (const w of words(m[1])) if (!names.has(w)) { names.add(w); grew = true; }
+    }
+  }
+  return names;
+}
 // The receiver chain that ends at `end`, read backwards through names, dots and the bracketed
 // groups of calls and indexes: "this.page", "context.pages()[0]", "(await context.newPage())".
 function receiver(text, end) {
@@ -289,13 +313,15 @@ function receiver(text, end) {
       space();
       if (text[i - 1] === '.') { i -= text[i - 2] === '?' ? 2 : 1; space(); continue; }
     }
-    return text.slice(i, stop);
+    return text.slice(i, stop).trim();
   }
 }
 // In shell commands an opener counts where a command starts: at a line start, after ; & | ( or a
-// backtick, or after a shell's command switch (cmd /c or /k, sh -c or -lc, PowerShell -Command).
+// backtick, after a shell's command switch (cmd /c or /k, sh -c or -lc, PowerShell -Command), or
+// after powershell or powershell.exe and its switches, each with or without a value, since Windows
+// PowerShell runs its first other argument as a command (powershell -NoProfile "ii index.html").
 // The command word may be quoted there; anywhere else a quote is just text.
-const CMD_START = String.raw`(?:^|[;&|(\x60]|\s(?:\/[ck]|-[a-z]*c|-command)\s)\s*['"]?\s*`;
+const CMD_START = String.raw`(?:^|[;&|(\x60]|\s(?:\/[ck]|-[a-z]*c|-command)\s|\bpowershell(?:\.exe)?['"]?(?:\s+-[\w:]+(?:\s+[^\s'"-]\S*)?)*\s)\s*['"]?\s*`;
 const SHELL_OPENER = new RegExp(CMD_START + String.raw`(?:start|open|xdg[-]open|explorer|invoke[-]item|ii|start[-]process|saps)(?:\.exe)?['"]?\s+\S`, 'im');
 
 test('every browser launch in the scanned tooling passes a literal headless: true', () => {
@@ -326,10 +352,10 @@ test('nothing opens a system browser, the desktop, or a visible Playwright mode'
       const m = re.exec(text);
       if (m) hits.push(`${file}:${lineOf(text, m.index)} ${what}: ${JSON.stringify(m[0])}`);
     }
-    const pageNames = new Set([...text.matchAll(PAGE_BINDING)].map((b) => b[1]));
+    const pages = pageNames(text);
     for (const m of text.matchAll(PAUSE)) {
       const chain = receiver(text, m.index);
-      if (/page/i.test(chain) || [...chain.matchAll(/[\w$]+/g)].some(([w]) => pageNames.has(w))) hits.push(`${file}:${lineOf(text, m.index)} a pause on ${JSON.stringify(chain)}, which can be a page, and a page pause opens Playwright's inspector`);
+      if (/page/i.test(chain) || [...chain.matchAll(/[\w$]+/g)].some(([w]) => pages.has(w))) hits.push(`${file}:${lineOf(text, m.index)} a pause on ${JSON.stringify(chain)}, which can be a page, and a page pause opens Playwright's inspector`);
     }
     if (isPlaywrightConfig(file, text)) {
       const m = /\bchannel\s*:/.exec(text);

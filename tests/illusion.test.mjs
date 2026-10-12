@@ -1,122 +1,198 @@
 // Gate: the illusion (what the viewer sees from E and from elsewhere).
 // Bound: headless Chromium with SwiftShader WebGL2, deviceScaleFactor 1, frozen particle clock
-// (t), default seed unless named, and only the viewports, times, zooms, views and β values listed
-// below. It measures luminance, not reading. Strokes come from the page's own text layer at the
-// same view (blurred 3 px, thresholded 35% of the way from the median to the 99.5th percentile,
-// kept to the central 84%×70% to skip the UI text); gaps are pixels of the text box ≥ 8 px from
-// them. A zoomed view scales the blur and gap distance with the zoom and keeps exactly the stroke
-// area the zoom predicts, so its mask cannot fatten where sprites merge. The test-only beta
-// parameter (0..1) renders the same base cloud with another relocation rate; beta=0 relocates
-// nothing and its text layer is the sky alone, so a render minus its beta-0 twin holds only what
-// relocation changed. Because the mask comes from the render under test, legibility also requires
-// it to match another seed's (relocated strokes follow the message, scattered particles the draw)
-// and relocation to lift the stroke/gap ratio over the beta-0 render on the same mask (no
-// relocation lifts it 1.01×).
-// Proves: at E the strokes are at least 1.48× brighter than the gaps, relocation lifts that ratio
-// at least 1.35×, and the strokes match across seeds, at t 0, 7.3 and 31 s, at 1280×800 and
-// 390×844, at fov 32 and 80, and when 2D canvas readback (getImageData) returns zeros as
-// anti-fingerprinting browsers do; at E at 1280×800 (t 0), with the letters' 14° lean undone, the
-// strokes form two lines, the top one narrower, with a full-height stem at the left end of the top
-// line and the right end of the bottom line and short letters at the other ends, so the text is
-// neither mirrored nor turned 180° and its letters lean right by about 14°; at 390×844 the whole stroke mask, measured across the full width, stays at least 8 px
-// inside the frame; the E text layer holds still over time and zoom only scales it; from 25° out
-// (±25° az and el, +60° az) the E strokes are no brighter than the back-view floor + 0.06 (the
-// back view is the floor itself, not a case tested against it); the az+25 text layer, the only
-// off-angle layer measured, is a smear that changes with the seed; every particle renders alike at
-// every angle (owner directive, 2026-10-11): at E, 3° from E (el+3), az+25, el−25 and the back the
-// text particles carry the light (within 10%), colour (warmth within 0.03) and sprite size (within
-// 15%) of the same particles drawn as ambient, and the scene's particle light at E and 3° is
-// within 15% of its mean over those three far views; relocation leaves no streaks above the floor
-// at az±25, az+60 and the back (row and column residual of render − beta-0 render within 1.45×
-// the mean residual at two diagonal control views); the same seed builds the same cloud and
-// another seed a different one.
-// Accepted limit, reported but not gated as hidden: from el±15–25° the text columns show as faint
-// vertical streaks. The letters lean 14° to spread them: at el±25 the column residual is 1.26× and
-// 1.72× the floor for the default seed (1.19 and 1.62 over 0.94; W8's upright letters gave 1.8×
-// and 2.3×, accepted by the coordinator with β 0.85). The streak bound at az+25 holds for the
-// default seed: seeds 2 and 3 of the same page measure 1.42 and 1.64 there (seed 1: 1.19), and
-// seed 3 also exceeds the hidden-from-25° margin there (by 0.069).
-// Does not prove that a person can read the text, or anything about views, times or seeds not
-// listed here, real GPUs, or device pixel ratios above 1. Nor does it hold β below 1: the streak
-// bound compares with a floor that rises with β as well, so β 1.0 passes it for the default seed.
+// (t), and only the viewports, times, zooms, views, seeds and β values listed below. The default
+// seed is 1; "seeds 1–3" means the page rendered with each of seeds 1, 2 and 3 as the default seed,
+// and the bounds marked so hold for the mean over those three. It measures luminance, not reading.
+// Strokes come from the page's own text layer at the same view (blurred 3 px, thresholded 35% of
+// the way from the median to the 99.5th percentile, kept to the central 84%×70% to skip the UI
+// text); gaps are pixels of the text box ≥ 8 px from them. A zoomed view scales the blur and gap
+// distance with the zoom and keeps exactly the stroke area the zoom predicts, so its mask cannot
+// fatten where sprites merge. The test-only beta parameter (0..1) renders the same base cloud with
+// another relocation rate; beta=0 relocates nothing and its text layer is the sky alone, so a
+// render minus its beta-0 twin holds only what relocation changed. Because the mask comes from the
+// render under test, legibility also requires it to match another seed's (relocated strokes follow
+// the message, scattered particles the draw) and relocation to lift the stroke/gap ratio over the
+// beta-0 render on the same mask (no relocation lifts it 1.01×).
+// Proves:
+// - at E the strokes are at least 1.48× brighter than the gaps, relocation lifts that ratio at
+//   least 1.35×, and the strokes match across seeds, at t 0, 7.3 and 31 s, at 1280×800 and
+//   390×844, at fov 32 and 80, and when 2D canvas readback (getImageData) returns zeros as
+//   anti-fingerprinting browsers do;
+// - at E at 1280×800 (t 0), with the letters' 14° lean undone, the strokes form two lines, the top
+//   one narrower, with a full-height stem at the left end of the top line and the right end of the
+//   bottom line and short letters at the other ends, so the text is neither mirrored nor turned
+//   180°; and those two stems then stand within 4° of upright (seeds 1–3), so the letters lean
+//   right by 14° ± 4°;
+// - at 390×844 the whole stroke mask, measured across the full width, stays at least 8 px inside
+//   the frame; the E text layer holds still over time and zoom only scales it;
+// - from 25° out (±25° az and el, +60° az) the E strokes are no brighter than the back-view floor
+//   + 0.09, and the floor stays below 1.19 (seeds 1–3; the back view is the floor itself, not a
+//   case tested against it); the az+25 text layer, the only off-angle layer measured, is a smear
+//   that changes with the seed;
+// - every particle renders alike at every angle (owner directive, 2026-10-11): at E, 3° (el+3),
+//   12° (az−12, 11.6° from E), az+25, el−25 and the back, at t 0 and 7.3, the text particles carry
+//   the light (within 5%) and colour (warmth within 0.03) of the same particles drawn as ambient,
+//   and at t 0 their sprite size (within 15%); the shipped render's particle light equals the text
+//   layer's plus the ambient layer's within 1% (additive blending makes them equal apart from 8-bit
+//   saturation), so the shipped draw is the one those comparisons measured; the scene's particle
+//   light at E, 3° and 12° is within 15% of its mean over the three far views; and E reached by
+//   "Find the angle" (a real click, the glide, then idle) or held by the tour (during its hold at
+//   E) renders the particles in the central region as E set by URL does, within 1%;
+// - relocation leaves no streaks at az±25, az+60 and the back: the row and column residual of a
+//   render minus its beta-0 twin stays within 2.1× each seed's floor, the mean residual at two
+//   diagonal control views (seeds 1–3); and at el±25, where the text columns are the accepted cost,
+//   the column residual stays below 1.95× the cloud's own noise (seeds 1–3), which is what the 14°
+//   lean buys (upright letters give 2.1 and 2.3);
+// - the same seed builds the same cloud and another seed a different one.
+// Re-measure, do not retune: the seed-mean bounds sit between the real page and its mutants as
+// measured for seeds 1–3 and checked for seeds 4–12 in threes (values beside each threshold). A
+// change that redraws the cloud without changing the design (one more rand() call in buildCloud,
+// another N_TOTAL, a glyph tweak that changes which particles relocate) moves every one of them. If
+// a bound turns red after such a redraw, re-measure seeds 1–3 and the spread over further seeds
+// (tmp-only scripts, as W11 did) and record what moved before touching the threshold.
+// Does not prove: that a person can read the text; views, times or seeds not listed; real GPUs or
+// device pixel ratios above 1; how the picture looks while the camera moves (mid-glide, mid-snap,
+// mid-tour, a coast), since every view here is shot with the camera at rest or in the tour's hold;
+// E reached any other way (a snap, the arrow keys); or a reveal confined to angles between the
+// measured views (for example only 5–10° from E). Nor does it hold β at 0.85: β 1.0 adds about
+// 15% to the az+25 row residual of a given seed, but the mean over three seeds moves more than that
+// from one set of seeds to the next (1.42–1.69 real against 1.64 and 1.90 at β 1.0), so no bound
+// here can tell them apart (review round 3, F25).
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startBrowser, newContext, magic, render } from './lib/harness.mjs';
-import { luminance, strokeMask, strokeGapRatio, iou, scaleMask, lineLayout, unslant, lightOver, streakResidual } from './lib/image.mjs';
+import { startBrowser, newContext, magic, render, waitFrames, state, until, sleep, PAGE_URL } from './lib/harness.mjs';
+import { decodePng, luminance, strokeMask, strokeGapRatio, iou, scaleMask, lineLayout, unslant, edgeLean, lightOver, streakResidual } from './lib/image.mjs';
 
 // Thresholds, each set from the real page and the mutants in tests/mutate.mjs (comments give the
 // measured values, real page first, at 1280×800 and seed 1 unless named; "seeds 1–3" means the
-// real page measured with each of seeds 1, 2 and 3 as the default seed).
+// real page measured with each of seeds 1, 2 and 3 as the default seed, and "mean" the mean over
+// those three; "in threes" means the same mean over seeds 4–6, 7–9 and 10–12, as redraws would give).
 const MIN_RATIO_AT_E = 1.48;     // stroke/gap luminance at E: 1.58–1.68 real (seeds 1–3, both viewports), 1.55–1.59 fov 80; 1.25–1.37 β 0.2 (1.69 at fov 32, where its lift fails), 1.33 dolly and 1.34 no relocation at fov 80, 1.39 no relocation at 390
 const MIN_LIFT = 1.35;           // that ratio over the beta-0 render's on the same mask: 1.48–1.61 real (seeds 1–3), 1.51–1.55 fov 80; 1.01–1.20 β 0.2, 1.01–1.03 no relocation
 const MIN_SEED_IOU = 0.5;        // E strokes, default seed vs OTHER_SEED: ≥ 0.70 real (seeds 1–3); 0.37 β 0.2 and 0.42 no relocation, both at 390
 const MIN_TIME_IOU = 0.8;        // E strokes t=0 vs later: 0.95 real; 0.66 when text particles drift across their sight lines
 const MIN_SCALE_IOU = 0.7;       // zoomed strokes vs base strokes scaled: 0.84–0.89 (fov 32) and 0.95 (fov 80) real (seeds 1–3); 0.53 and 0.66 when zoom dollies the eye
-const FLOOR_MARGIN = 0.06;       // excess over the back-view floor from 25° out: 0.028 real (az−25; 0.037 seed 2, 0.069 seed 3 at az+25); 0.51 flat text at el+25 (0.11 for text squeezed halfway to its plane, on the upright page); 0.058 with β 1.0
-const MAX_BACK_FLOOR = 1.25;     // the back-view floor itself: 1.12–1.14 real (seeds 1–3); 1.26 relocation without density compensation, 1.24 flat text (which fails FLOOR_MARGIN)
+const FLOOR_MARGIN = 0.09;       // mean excess over each seed's back-view floor from 25° out, per view: ≤ 0.036 real (az+25; ≤ 0.054 in threes; one seed alone reaches 0.075); 0.496 flat text (el+25). β 1.0 (0.046) and relocation without density compensation (0.062) stay inside it; other bounds catch the second
+const MAX_BACK_FLOOR = 1.19;     // the back-view floor itself, mean: 1.126 real (1.106–1.144 in threes); 1.251 relocation without density compensation (1.241 for seeds 4–6), 1.209 flat text
 const MAX_SMEAR_E_IOU = 0.25;    // az+25 text layer vs the E strokes: 0.12–0.15 real (seeds 1–3), 0.16 flat text (a coarse guard; the seed check tells them apart)
 const MAX_SMEAR_SEED_IOU = 0.3;  // az+25 text layer, seed vs seed: 0.12 real (seeds 1–3), 0.57 flat text
-const LIGHT_BAND = [0.9, 1.1];   // text / as-ambient light of the same particles: 0.99–1.01 real (seeds 1–3, every view); at E 1.24 with text 1.25× brighter near E, 1.58 with text sprites 1.25× wider, 1.17 with their blur cut 75%, and 1.38–1.41 at every view with text 1.4× brighter everywhere
-const MAX_WARMTH_GAP = 0.03;     // |text − as-ambient warmth|: ≤ 0.005 real (seeds 1–3); 0.126 at E and 0.096 at 3° with a 30% gold tint near E
-const SIZE_BAND = [0.85, 1.15];  // text / as-ambient effective sprite area at SPARSE_BETA: 0.98–1.01 real (seeds 1–3); 1.49 at E and 1.34 at 3° with text sprites 1.25× wider near E
-const SCENE_BAND = [0.85, 1.15]; // scene particle light at E and 3° over its mean at the far views: 0.95–1.06 real (seeds 1–3); 1.35 with every particle 1.4× brighter near E
-const STREAK_K = 1.45;           // streak residual over the floor at az±25, az+60, back: ≤ 1.29 real (az+60 row); 1.74 at az+25 without density compensation. β 1.0 gives 1.28, since its floor rises too (1.07); upright letters gave 1.64 at seed 1, but 1.62 and 1.88 against 1.73 and 1.88 at β 0.85 for seeds 2–3, so this bound never held β below 1
-const MAX_STREAK_FLOOR = 1.3;    // the floor itself: 0.94 real (0.93–0.95 seeds 2–3); 2.12 flat text
+const LIGHT_BAND = [0.95, 1.05]; // text / as-ambient light of the same particles: 0.994–1.006 real (seeds 1–3, every view, t 0 and 7.3); 1.24 at E with text 1.25× brighter near E, 1.58 with text sprites 1.25× wider, 1.17 with their blur cut 75%, and 1.38–1.41 at every view with text 1.4× brighter everywhere; 1.27–1.34 near E with flat text and 0.92 at az+25 and 1.06 at the back when relocation ignores density compensation, since both move text particles far from where they started
+const MAX_WARMTH_GAP = 0.03;     // |text − as-ambient warmth|: ≤ 0.005 real (seeds 1–3, t 0 and 7.3); 0.126 at E and 0.096 at 3° with a 30% gold tint near E
+const SIZE_BAND = [0.85, 1.15];  // text / as-ambient effective sprite area at SPARSE_BETA: 0.977–1.009 real (seeds 1–3); 1.49 at E and 1.34 at 3° with text sprites 1.25× wider near E
+const SHIPPED_BAND = [0.99, 1.01]; // the shipped render's particle light / (text layer's + ambient layer's): 0.9993–0.9999 real (seeds 1–3, every view, t 0 and 7.3); 1.053–1.056 at E and 1.039–1.041 at 3° when the shipped draw alone adds a text pass at 25% near E (seeds 1–3, t 0 and 7.3)
+const SCENE_BAND = [0.85, 1.15]; // scene particle light at E, 3° and 12° over its mean at the far views: 0.95–1.08 real (seeds 1–3, t 0 and 7.3); 1.35 with every particle 1.4× brighter near E
+const MODE_BAND = [0.99, 1.01];  // central particle light at E reached by the glide, or held by the tour, over E set by URL: 1.000 real (the same pixels); 1.065 with text 1.25× brighter near E after a glide, or during the tour
+const STREAK_K = 2.1;            // mean streak residual over each seed's floor at az±25, az+60, back: ≤ 1.51 real (az+25 row; 1.77–1.91 in threes); 2.31 relocation without density compensation (az+25 row; 2.58 for seeds 4–6)
+const MAX_STREAK_FLOOR = 1.3;    // the floor itself, mean: 0.94 real (0.87–0.91 in threes); 1.95 flat text
+const MAX_EL_STREAK = 1.95;      // mean column residual over the cloud's own noise (not over the floor) at el+25 and at el−25: 1.37 and 1.49 real (≤ 1.65 in threes); 2.06 and 2.30 upright letters, 2.07 and 2.27 with a 5° lean. β 1.0 gives 1.67 and 1.70, inside it
 const SLANT_DEG = 14;            // the letters' lean (SLANT in index.html), undone before the layout is measured
 const LINE_WIDTH_RATIO = [0.76, 0.92]; // top/bottom line width at E, lean undone: 0.857 real, 1.155 turned 180°
-const FULL_STEM = 0.8;           // end-strip height / line height at "h" and "d", lean undone: 0.94 and 0.96 real (0.94–0.99 seeds 1–3); 0.44 and 0.60 mirrored (its letters lean left, "o" and "w" are there), 0.63 and 0.58 with upright letters (0.68–0.75 at "h", seeds 2–3)
+const FULL_STEM = 0.8;           // end-strip height / line height at "h" and "d", lean undone: 0.94 and 0.96 real (0.94–0.99 seeds 1–3); 0.44 and 0.60 mirrored (its letters lean left, "o" and "w" are there), 0.63 and 0.58 with upright letters (0.68–0.75 at "h", seeds 2–3); a 5° lean keeps 0.85–0.93 (seeds 1–3), which MAX_LEAN catches
 const SHORT_END = 0.7;           // the same at "o" and "w": 0.49 and 0.53 real; it catches no mutant alone, since a mirrored frame's stems lean the wrong way and fail FULL_STEM first
+const MAX_LEAN = 4;              // degrees the "h" and "d" stems still lean once the 14° is undone, mean of the two, mean over seeds 1–3: 0.73 real (|≤ 0.89| in threes, |≤ 1.75| for any one seed); −8.1 with a 5° lean, −13.8 upright
 const MIN_FIT_MARGIN = 8;        // px between the strokes and the frame edges at 390×844: 33–35 real (seeds 1–3), 0 without the phone widening
 const SPARSE_BETA = 0.02;        // 121 text particles: separate sprites, so the effective area measures sprite size
 const OTHER_SEED = 8;
+const SEEDS = [1, 2, 3];
 const DIM = { blur: 5, bandpass: 15 }; // masks of off-angle text layers: sky removed, dots merged
+const CENTRE = [0.08, 0.92, 0.15, 0.85]; // the stroke-mask region: clear of the bar and the hint, whose hover and focus styles may differ
 // Zoomed views scale the mask with the text: blur and gap distance follow the zoom factor s, and
 // the mask keeps the base stroke area times s².
 const scaled = (s, baseStrokes) => ({ blur: Math.max(1, Math.round(3 * s)), gapDist: Math.max(3, Math.round(8 * s)), area: Math.round(baseStrokes * s * s) });
+const SLANT_LEAN = Math.tan((SLANT_DEG * Math.PI) / 180);
 
-let browser, browser2, wide, wide2, phone, blind, E;
-const cache = new Map(), label = new Map();
+// Renders. Every view the file needs is queued in `before`, in the order the tests use them, and
+// rendered WIDTH at a time while the tests compute; a test first asks for its own views (need),
+// which moves any not yet started to the front. Wide views go round the browsers, one wide context
+// in each, since SwiftShader draws each browser's pages in one GPU process. Each view is its own
+// page with a frozen clock and a fixed seed, so the images are the same as one at a time in one
+// browser. A view keeps its decoded image; its luminance is computed when first asked for.
+const BROWSERS = 4, WIDTH = 4;
+let browsers = [], wides = [], wide, phone, blind, E, P, turn = 0, busy = 0;
+const cache = new Map(), queue = [], label = new Map();
+
+function slot(context, query, urgent) {
+  const key = `${label.get(context)}?${query}`;
+  let v = cache.get(key);
+  if (!v) {
+    v = { context, query, started: false };
+    v.promise = new Promise((resolve, reject) => Object.assign(v, { resolve, reject }));
+    v.promise.catch(() => {});   // a failed view that no test awaits must not end the run on its own
+    cache.set(key, v);
+    if (urgent) queue.unshift(v); else queue.push(v);
+  } else if (urgent && !v.started) {
+    queue.splice(queue.indexOf(v), 1);
+    queue.unshift(v);
+  }
+  return v;
+}
+function pump() {
+  while (busy < WIDTH && queue.length) {
+    const v = queue.shift();
+    v.started = true; busy++;
+    const via = v.context === wide ? wides[turn++ % wides.length] : v.context;
+    render(via, v.query).then((r) => {
+      let lum = null;
+      v.resolve({ ...r, get lum() { return (lum ??= luminance(r.img)); } });
+    }, v.reject).finally(() => { busy--; pump(); });
+  }
+}
+const view = (context, query) => { const v = slot(context, query, true); pump(); return v.promise; };
+const warm = (context, queries) => { for (const q of queries) slot(context, q, false); pump(); };
+async function need([context, queries]) {
+  const vs = [...new Set(queries)].reverse().map((q) => slot(context, q, true)).reverse();
+  pump();
+  const settled = await Promise.allSettled(vs.map((v) => v.promise));
+  const failed = settled.find((s) => s.status === 'rejected');
+  if (failed) throw failed.reason;
+}
 
 // Anti-fingerprinting browsers return blank canvas readback; the page must not depend on it.
 const blankReadback = () => {
   CanvasRenderingContext2D.prototype.getImageData = function (x, y, w, h) { return new ImageData(Math.max(1, Math.abs(w)), Math.max(1, Math.abs(h))); };
 };
 
-before(async () => {
-  [browser, browser2] = await Promise.all([startBrowser(), startBrowser()]);
-  wide = (await newContext(browser, { width: 1280, height: 800 })).context;
-  wide2 = (await newContext(browser2, { width: 1280, height: 800 })).context;   // a second GPU process for wide views
-  phone = (await newContext(browser, { width: 390, height: 844 })).context;
-  blind = (await newContext(browser, { width: 1280, height: 800, initScript: blankReadback })).context;
-  for (const [c, name] of [[wide, 'wide'], [phone, 'phone'], [blind, 'blind']]) label.set(c, name);
-  E = await magic(wide);
-});
-after(async () => { await Promise.all([browser?.close(), browser2?.close()]); });
-
 const at = (daz, del, extra = '') => `az=${E.az + daz}&el=${E.el + del}&tour=0${extra}`;
 const back = (extra = '') => `az=${E.az + 180}&el=${-E.el}&tour=0${extra}`;
+const seeded = (q, s) => (s === 1 ? q : `${q}&seed=${s}`);
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
-
-// Each view renders once per context; the cache holds the pending render, so a view asked for
-// twice at once still renders once. `via` renders it in another context with the same settings.
-function view(context, query, via = context) {
-  const key = `${label.get(context)}?${query}`;
-  if (!cache.has(key)) cache.set(key, render(via, query).then((r) => ({ ...r, lum: luminance(r.img) })));
-  return cache.get(key);
-}
-
-// Renders the views a test needs four at a time; wide views alternate between two browsers,
-// since SwiftShader draws each browser's pages in one GPU process. Each view is its own page with
-// a frozen clock and a fixed seed, so the images are the same as one at a time in one browser.
-async function prefetch(context, queries, width = 4) {
-  const todo = [...new Set(queries)], errors = [];
-  await Promise.all(Array.from({ length: width }, async (_, k) => {
-    const via = context === wide && k % 2 ? wide2 : context;
-    while (todo.length) { try { await view(context, todo.shift(), via); } catch (err) { errors.push(err); } }
-  }));
-  if (errors.length) throw errors[0];
-}
 const legibilityViews = (query) => [query + '&layer=text', `${query}&seed=${OTHER_SEED}&layer=text`, query, query + '&beta=0'];
+const OFF = () => [['az+25', at(25, 0, '&t=0')], ['az-25', at(-25, 0, '&t=0')], ['el+25', at(0, 25, '&t=0')], ['el-25', at(0, -25, '&t=0')], ['az+60', at(60, 0, '&t=0')]];
+// The alike views, each as a function of the time suffix; the first three are near E.
+const ALIKE = () => [['E', (x) => at(0, 0, x)], ['3° (el+3)', (x) => at(0, 3, x)], ['12° (az−12)', (x) => at(-12, 0, x)], ['az+25', (x) => at(25, 0, x)], ['el−25', (x) => at(0, -25, x)], ['back', (x) => back(x)]];
+const ALIKE_TIMES = ['0', '7.3'];
+const alikeViews = (q, sparse) => [q, q + '&beta=0', q + '&beta=0&layer=text', q + '&layer=text', q + '&layer=ambient', ...(sparse ? [q + `&beta=${SPARSE_BETA}&layer=text`, q + `&beta=${SPARSE_BETA}&layer=ambient`] : [])];
+const STREAK = () => ({
+  controls: [['az+90 el+36', at(90, 36, '&t=0')], ['az-120 el+30', at(-120, 30, '&t=0')]],
+  gated: [['az+25', at(25, 0, '&t=0')], ['az-25', at(-25, 0, '&t=0')], ['az+60', at(60, 0, '&t=0')], ['back', back('&t=0')]],
+  cost: [['el+25', at(0, 25, '&t=0')], ['el-25', at(0, -25, '&t=0')]],
+});
+
+before(async () => {
+  browsers = await Promise.all(Array.from({ length: BROWSERS }, () => startBrowser()));
+  wides = await Promise.all(browsers.map(async (b) => (await newContext(b, { width: 1280, height: 800 })).context));
+  wide = wides[0];
+  phone = (await newContext(browsers[0], { width: 390, height: 844 })).context;
+  blind = (await newContext(browsers[1], { width: 1280, height: 800, initScript: blankReadback })).context;
+  for (const [c, name] of [[wide, 'wide'], [phone, 'phone'], [blind, 'blind']]) label.set(c, name);
+  E = await magic(wide);
+  // Each test's views, in test order; `before` queues them all.
+  P = {
+    legible: [wide, ['0', '7.3', '31'].flatMap((time) => legibilityViews(at(0, 0, `&t=${time}`)))],
+    phone: [phone, legibilityViews(at(0, 0, '&t=0'))],
+    layout: [wide, SEEDS.map((s) => seeded(at(0, 0, '&t=0'), s) + '&layer=text')],
+    blind: [blind, legibilityViews(at(0, 0, '&t=0'))],
+    zoom: [wide, [at(0, 0, '&t=0&layer=text'), at(0, 0, '&t=0'), ...[32, 80].flatMap((fov) => legibilityViews(at(0, 0, `&t=0&fov=${fov}`)))]],
+    still: [wide, ['0', '7.3', '31'].map((time) => at(0, 0, `&t=${time}&layer=text`))],
+    hidden: [wide, SEEDS.flatMap((s) => [seeded(at(0, 0, '&t=0'), s) + '&layer=text', seeded(back('&t=0'), s), ...OFF().map(([, q]) => seeded(q, s))])],
+    smear: [wide, [at(0, 0, '&t=0&layer=text'), at(25, 0, '&t=0&layer=text'), at(25, 0, `&t=0&seed=${OTHER_SEED}&layer=text`)]],
+    alike: [wide, ALIKE_TIMES.flatMap((time) => ALIKE().flatMap(([, f]) => alikeViews(f(`&t=${time}`), time === '0')))],
+    modes: [wide, [at(0, 0, '&t=0'), at(0, 0, '&t=0&beta=0&layer=text')]],
+    streak: [wide, SEEDS.flatMap((s) => Object.values(STREAK()).flat().flatMap(([, q]) => [seeded(q, s), seeded(q, s) + '&beta=0']))],
+  };
+  for (const entry of Object.values(P)) warm(...entry);
+});
+after(async () => { await Promise.all(browsers.map((b) => b.close())); });
 
 async function strokesAt(context, query, opts) {
   const v = await view(context, query + '&layer=text');
@@ -143,11 +219,11 @@ function illegible(name, L) {
   if (!(L.seedIoU >= MIN_SEED_IOU)) broken.push(`${name}: strokes for seeds 1 and ${OTHER_SEED} overlap with IoU ${L.seedIoU.toFixed(3)}, below ${MIN_SEED_IOU}, so the shapes follow the particle draw, not the message`);
   return broken;
 }
-const assertNone = (broken) => assert.ok(broken.length === 0, broken.join('; '));
+const assertNone = (broken, lead = '') => assert.ok(broken.length === 0, lead + broken.join('; '));
 const describe = (name, L) => `${name}: ratio ${L.ratio.toFixed(3)}, lift over beta=0 ${L.lift.toFixed(3)}, seed IoU ${L.seedIoU.toFixed(3)}, strokes ${L.strokes} px, gaps ${L.gaps} px`;
 
 test('legible at E at 1280×800 for t = 0, 7.3 and 31 s', async (t) => {
-  await prefetch(wide, ['0', '7.3', '31'].flatMap((time) => legibilityViews(at(0, 0, `&t=${time}`))));
+  await need(P.legible);
   const rows = [];
   for (const time of ['0', '7.3', '31']) rows.push([`E t=${time}`, await legibility(wide, at(0, 0, `&t=${time}`))]);
   for (const [name, L] of rows) t.diagnostic(describe(name, L));
@@ -155,7 +231,7 @@ test('legible at E at 1280×800 for t = 0, 7.3 and 31 s', async (t) => {
 });
 
 test('legible at E at 390×844', async (t) => {
-  await prefetch(phone, legibilityViews(at(0, 0, '&t=0')));
+  await need(P.phone);
   const L = await legibility(phone, at(0, 0, '&t=0'));
   t.diagnostic(describe('E 390×844 t=0', L));
   assertNone(illegible('E 390×844 t=0', L));
@@ -167,24 +243,39 @@ test('legible at E at 390×844', async (t) => {
 // line at x-height only (about 0.6 and 0.4 of the line height in a 0.15-line-height strip). The
 // letters lean right by SLANT_DEG, so the strokes are measured with that lean undone: then the
 // stems stand upright in their end strips, while letters that lean the other way (a mirrored
-// frame) or not at all (upright letters) leave those strips short.
-test('at E the message reads "hello" over "world", left to right', async (t) => {
+// frame) leave those strips short. The stems' own lean is then measured along the outer ink edge
+// of each line (the left edge of "h", the right edge of "d"), so a lean a few degrees off 14°,
+// which the strips still pass, fails too.
+test('at E the message reads "hello" over "world", left to right, in letters leaning 14°', async (t) => {
+  await need(P.layout);
   const m = await strokesAt(wide, at(0, 0, '&t=0'));
-  const L = lineLayout(unslant(m, Math.tan((SLANT_DEG * Math.PI) / 180)));
+  const L = lineLayout(unslant(m, SLANT_LEAN));
   assert.ok(L, `the E strokes (box ${JSON.stringify(m.box)}) have no empty row between two lines`);
+  const leans = [];
+  for (const s of SEEDS) {
+    const u = unslant(s === 1 ? m : await strokesAt(wide, seeded(at(0, 0, '&t=0'), s)), SLANT_LEAN);
+    const Ls = lineLayout(u);
+    assert.ok(Ls, `seed ${s}: the E strokes, lean undone, have no empty row between two lines`);
+    const h = edgeLean(u, Ls.top, 'left').lean, d = edgeLean(u, Ls.bottom, 'right').lean;
+    leans.push({ s, h, d, both: (h + d) / 2 });
+  }
+  const lean = mean(leans.map((l) => l.both));
   const { top, bottom } = L;
   const widthRatio = top.width / bottom.width;
   const ends = { hLeft: top.left / top.height, oRight: top.right / top.height, wLeft: bottom.left / bottom.height, dRight: bottom.right / bottom.height };
   t.diagnostic(`gap ${L.gap} px; top ${JSON.stringify(top)}; bottom ${JSON.stringify(bottom)}; width ratio ${widthRatio.toFixed(3)}; end heights / line height ${Object.entries(ends).map(([k, v]) => `${k} ${v.toFixed(2)}`).join(', ')}`);
+  t.diagnostic(`lean left in the stems once ${SLANT_DEG}° is undone (degrees, + leans right): ${leans.map((l) => `seed ${l.s} "h" ${l.h.toFixed(2)}, "d" ${l.d.toFixed(2)}`).join('; ')}; mean ${lean.toFixed(2)}`);
   assert.ok(L.gap >= 3, `the two lines are only ${L.gap} px apart`);
   assert.ok(widthRatio >= LINE_WIDTH_RATIO[0] && widthRatio <= LINE_WIDTH_RATIO[1], `the top line is ${top.width} px wide and the bottom line ${bottom.width} px (ratio ${widthRatio.toFixed(3)}); "hello" over "world" gives about 0.84, so it must be within ${LINE_WIDTH_RATIO.join('–')} (a frame turned 180° gives about 1.19)`);
   assert.ok(ends.hLeft >= FULL_STEM, `with the letters' ${SLANT_DEG}° lean undone, the left end of the top line is only ${ends.hLeft.toFixed(2)} of the line height; the "h" stem there must reach at least ${FULL_STEM} (a mirrored frame puts "o" there, and letters that do not lean about ${SLANT_DEG}° leave the stem slanted across the strip)`);
   assert.ok(ends.dRight >= FULL_STEM, `with the letters' ${SLANT_DEG}° lean undone, the right end of the bottom line is only ${ends.dRight.toFixed(2)} of the line height; the "d" stem there must reach at least ${FULL_STEM} (a mirrored frame puts "w" there, and letters that do not lean about ${SLANT_DEG}° leave the stem slanted across the strip)`);
   assert.ok(ends.oRight <= SHORT_END, `the right end of the top line is ${ends.oRight.toFixed(2)} of the line height; the "o" there must stay at or below ${SHORT_END}`);
   assert.ok(ends.wLeft <= SHORT_END, `the left end of the bottom line is ${ends.wLeft.toFixed(2)} of the line height; the "w" there must stay at or below ${SHORT_END}`);
+  assert.ok(Math.abs(lean) <= MAX_LEAN, `with ${SLANT_DEG}° undone, the "h" and "d" stems still lean ${lean.toFixed(2)}° (mean over seeds ${SEEDS.join(', ')}; + is to the right), so the letters lean about ${(SLANT_DEG + lean).toFixed(1)}°, not ${SLANT_DEG}° ± ${MAX_LEAN}°; the lean spreads the stems over many screen columns, so from above and below E they do not show as vertical streaks`);
 });
 
 test('at 390×844 the whole message fits inside the frame', async (t) => {
+  await need(P.phone);
   const v = await view(phone, at(0, 0, '&t=0&layer=text'));
   const { width: W, height: H } = v.img;
   const band = [0.15, 0.85];                         // full width; rows clear of the bar and the hint
@@ -199,14 +290,14 @@ test('at 390×844 the whole message fits inside the frame', async (t) => {
 });
 
 test('legible at E when canvas readback returns zeros', async (t) => {
-  await prefetch(blind, legibilityViews(at(0, 0, '&t=0')));
+  await need(P.blind);
   const L = await legibility(blind, at(0, 0, '&t=0'));
   t.diagnostic(describe('E with blank getImageData', L));
   assertNone(illegible('E with blank getImageData', L));
 });
 
 test('legible at E zoomed in and out, and zoom only scales the image', async (t) => {
-  await prefetch(wide, [at(0, 0, '&t=0&layer=text'), ...[32, 80].flatMap((fov) => legibilityViews(at(0, 0, `&t=0&fov=${fov}`)))]);
+  await need(P.zoom);
   const base = await view(wide, at(0, 0, '&t=0'));
   const baseMask = await strokesAt(wide, at(0, 0, '&t=0'));
   const rows = [];
@@ -226,7 +317,7 @@ test('legible at E zoomed in and out, and zoom only scales the image', async (t)
 });
 
 test('the text layer at E holds still over time', async (t) => {
-  await prefetch(wide, ['0', '7.3', '31'].map((time) => at(0, 0, `&t=${time}&layer=text`)));
+  await need(P.still);
   const m0 = await strokesAt(wide, at(0, 0, '&t=0'));
   const rows = [];
   for (const time of ['7.3', '31']) rows.push([time, iou(m0.mask, (await strokesAt(wide, at(0, 0, `&t=${time}`))).mask)]);
@@ -237,22 +328,31 @@ test('the text layer at E holds still over time', async (t) => {
 });
 
 // el±25 is in this test: the stem streaks there (the accepted cost, see the residual test) fall
-// mostly off the E strokes, so the E strokes themselves stay at the floor (excess 0.02 at el−25).
-test('hidden from 25° out: E strokes no brighter than the back-view floor', async (t) => {
-  const off = [['az+25', at(25, 0, '&t=0')], ['az-25', at(-25, 0, '&t=0')], ['el+25', at(0, 25, '&t=0')], ['el-25', at(0, -25, '&t=0')], ['az+60', at(60, 0, '&t=0')]];
-  await prefetch(wide, [at(0, 0, '&t=0&layer=text'), back('&t=0'), ...off.map(([, q]) => q)]);
-  const m = await strokesAt(wide, at(0, 0, '&t=0'));
-  const ratio = async (q) => strokeGapRatio((await view(wide, q)).lum, m);
-  const floor = await ratio(back('&t=0'));
-  const rows = [];
-  for (const [name, q] of off) rows.push([name, await ratio(q)]);
-  t.diagnostic(`back-view floor ${floor.toFixed(3)}; ${rows.map(([n, r]) => `${n} ${r.toFixed(3)}`).join(', ')}`);
-  assert.ok(floor < MAX_BACK_FLOOR, `the back-view floor ${floor.toFixed(3)} is not below ${MAX_BACK_FLOOR}: the E strokes show from behind, so a comparison with it would mean nothing`);
-  for (const [name, r] of rows) assert.ok(r <= floor + FLOOR_MARGIN, `${name}: stroke/gap ratio ${r.toFixed(3)} exceeds the back-view floor ${floor.toFixed(3)} + ${FLOOR_MARGIN}`);
+// mostly off the E strokes, so the E strokes themselves stay at the floor. Each seed's views are
+// measured on that seed's own E strokes and back-view floor; the bounds hold for the seed mean.
+test('hidden from 25° out: E strokes no brighter than the back-view floor (seeds 1–3)', async (t) => {
+  await need(P.hidden);
+  const per = [];
+  for (const s of SEEDS) {
+    const m = await strokesAt(wide, seeded(at(0, 0, '&t=0'), s));
+    const ratio = async (q) => strokeGapRatio((await view(wide, seeded(q, s))).lum, m);
+    const floor = await ratio(back('&t=0'));
+    const excess = {};
+    for (const [name, q] of OFF()) excess[name] = (await ratio(q)) - floor;
+    per.push({ s, floor, excess });
+  }
+  const floor = mean(per.map((p) => p.floor));
+  const excess = OFF().map(([name]) => [name, mean(per.map((p) => p.excess[name]))]);
+  for (const p of per) t.diagnostic(`seed ${p.s}: back-view floor ${p.floor.toFixed(3)}; excess over it ${Object.entries(p.excess).map(([n, x]) => `${n} ${x.toFixed(3)}`).join(', ')}`);
+  t.diagnostic(`mean over seeds ${SEEDS.join(', ')}: floor ${floor.toFixed(3)}; excess ${excess.map(([n, x]) => `${n} ${x.toFixed(3)}`).join(', ')}`);
+  const broken = [];
+  if (!(floor < MAX_BACK_FLOOR)) broken.push(`the back-view floor ${floor.toFixed(3)} is not below ${MAX_BACK_FLOOR}: the E strokes show from behind, so a comparison with it would mean nothing`);
+  for (const [name, x] of excess) if (!(x <= FLOOR_MARGIN)) broken.push(`${name}: the E strokes' stroke/gap ratio exceeds the back-view floor by ${x.toFixed(3)}, more than ${FLOOR_MARGIN}`);
+  assertNone(broken, `from 25° out the E strokes must not show (means over seeds ${SEEDS.join(', ')}), but `);
 });
 
 test('the text layer at +25° az is smeared', async (t) => {
-  await prefetch(wide, [at(0, 0, '&t=0&layer=text'), at(25, 0, '&t=0&layer=text'), at(25, 0, `&t=0&seed=${OTHER_SEED}&layer=text`)]);
+  await need(P.smear);
   const mE = await strokesAt(wide, at(0, 0, '&t=0'));
   const a = await strokesAt(wide, at(25, 0, '&t=0'), DIM);
   const b = await strokesAt(wide, at(25, 0, `&t=0&seed=${OTHER_SEED}`), DIM);
@@ -277,54 +377,110 @@ async function drawnBothWays(q, beta) {
   const a = lightOver((await view(wide, q + '&beta=0')).img, (await view(wide, q + b + '&layer=ambient')).img);
   return { light: t.light / a.light, warmth: t.warmth - a.warmth, size: t.area / a.area };
 }
+// The comparisons above read only the test-only draws (layer=text, layer=ambient, beta=0). The
+// shipped draw (no layer) adds both classes in one pass, so with additive blending its particle
+// light over the sky is the text layer's plus the ambient layer's; a reveal in the shipped draw
+// alone breaks that sum. Returns the shipped light and its ratio to that sum.
+async function shipped(q) {
+  const sky = (await view(wide, q + '&beta=0&layer=text')).img;
+  const light = async (x) => lightOver((await view(wide, x)).img, sky).light;
+  const full = await light(q);
+  return { full, ratio: full / ((await light(q + '&layer=text')) + (await light(q + '&layer=ambient'))) };
+}
 
 test('every particle renders alike at every angle: no reveal near E', async (t) => {
-  const views = [['E', at(0, 0, '&t=0')], ['3° (el+3)', at(0, 3, '&t=0')], ['az+25', at(25, 0, '&t=0')], ['el-25', at(0, -25, '&t=0')], ['back', back('&t=0')]];
-  await prefetch(wide, views.flatMap(([, q]) => [q, q + '&beta=0', q + '&beta=0&layer=text', q + '&layer=text', q + '&layer=ambient', q + `&beta=${SPARSE_BETA}&layer=text`, q + `&beta=${SPARSE_BETA}&layer=ambient`]));
+  await need(P.alike);
   const rows = [];
-  for (const [name, q] of views) {
-    const d = await drawnBothWays(q), s = await drawnBothWays(q, SPARSE_BETA);
-    const scene = lightOver((await view(wide, q)).img, (await view(wide, q + '&beta=0&layer=text')).img).light;
-    rows.push({ name, light: d.light, warmth: d.warmth, size: s.size, scene });
+  for (const time of ALIKE_TIMES) {
+    const views = ALIKE();
+    const here = [];
+    for (const [k, [name, f]] of views.entries()) {
+      const q = f(`&t=${time}`);
+      const d = await drawnBothWays(q), s = time === '0' ? await drawnBothWays(q, SPARSE_BETA) : null;
+      const sh = await shipped(q);
+      here.push({ name: `${name} t=${time}`, near: k < 3, light: d.light, warmth: d.warmth, size: s?.size, shipped: sh.ratio, scene: sh.full });
+    }
+    const far = mean(here.filter((r) => !r.near).map((r) => r.scene));
+    for (const r of here) rows.push({ ...r, scene: r.scene / far });
   }
-  const farScene = mean(rows.slice(2).map((r) => r.scene));
-  for (const r of rows) t.diagnostic(`${r.name}: text/as-ambient light ${r.light.toFixed(3)}, warmth difference ${r.warmth.toFixed(3)}, sprite size ratio (beta ${SPARSE_BETA}) ${r.size.toFixed(3)}, scene light / far mean ${(r.scene / farScene).toFixed(3)}`);
+  for (const r of rows) t.diagnostic(`${r.name}: text/as-ambient light ${r.light.toFixed(3)}, warmth difference ${r.warmth.toFixed(3)}${r.size === undefined ? '' : `, sprite size ratio (beta ${SPARSE_BETA}) ${r.size.toFixed(3)}`}, shipped / (text + ambient) ${r.shipped.toFixed(4)}, scene light / far mean ${r.scene.toFixed(3)}`);
   // Every broken bound is named in one message, so a failure shows each way the particles differ.
   const broken = [];
   for (const r of rows) {
     if (!(r.light >= LIGHT_BAND[0] && r.light <= LIGHT_BAND[1])) broken.push(`${r.name}: the text particles carry ${r.light.toFixed(3)}× the light of the same particles drawn as ambient (must be within ${LIGHT_BAND.join('–')})`);
     if (!(Math.abs(r.warmth) <= MAX_WARMTH_GAP)) broken.push(`${r.name}: their light is warmer than the same particles drawn as ambient by ${r.warmth.toFixed(3)} (red−blue over red+blue; must be within ±${MAX_WARMTH_GAP})`);
-    if (!(r.size >= SIZE_BAND[0] && r.size <= SIZE_BAND[1])) broken.push(`${r.name}: their sprites cover ${r.size.toFixed(3)}× the effective area of the same particles drawn as ambient at beta ${SPARSE_BETA} (must be within ${SIZE_BAND.join('–')})`);
+    if (r.size !== undefined && !(r.size >= SIZE_BAND[0] && r.size <= SIZE_BAND[1])) broken.push(`${r.name}: their sprites cover ${r.size.toFixed(3)}× the effective area of the same particles drawn as ambient at beta ${SPARSE_BETA} (must be within ${SIZE_BAND.join('–')})`);
+    if (!(r.shipped >= SHIPPED_BAND[0] && r.shipped <= SHIPPED_BAND[1])) broken.push(`${r.name}: the shipped render's particle light is ${r.shipped.toFixed(4)}× the text layer's plus the ambient layer's (must be within ${SHIPPED_BAND.join('–')}), so the shipped draw lights the particles differently from the draws compared here`);
+    if (r.near && !(r.scene >= SCENE_BAND[0] && r.scene <= SCENE_BAND[1])) broken.push(`${r.name}: the scene's particle light is ${r.scene.toFixed(3)}× its mean at az+25, el−25 and the back (must be within ${SCENE_BAND.join('–')})`);
   }
-  for (const r of rows.slice(0, 2)) {
-    const k = r.scene / farScene;
-    if (!(k >= SCENE_BAND[0] && k <= SCENE_BAND[1])) broken.push(`${r.name}: the scene's particle light is ${k.toFixed(3)}× its mean at az+25, el−25 and the back (must be within ${SCENE_BAND.join('–')})`);
-  }
-  assert.ok(broken.length === 0, `every particle must render alike at every angle, but ${broken.join('; ')}`);
+  assertNone(broken, 'every particle must render alike at every angle, but ');
 });
 
-// The accepted cost is reported, not asserted: elevation turns keep the text columns as streaks.
-test('relocation leaves no streaks at az±25, az+60 or the back', async (t) => {
-  const residual = async (q) => streakResidual((await view(wide, q)).lum, (await view(wide, q + '&beta=0')).lum, 1280, 800);
-  const views = {
-    controls: [['az+90 el+36', at(90, 36, '&t=0')], ['az-120 el+30', at(-120, 30, '&t=0')]],
-    gated: [['az+25', at(25, 0, '&t=0')], ['az-25', at(-25, 0, '&t=0')], ['az+60', at(60, 0, '&t=0')], ['back', back('&t=0')]],
-    cost: [['el+25', at(0, 25, '&t=0')], ['el-25', at(0, -25, '&t=0')]],
+// Every other view is set by URL with the camera at rest. The camera's modes must not change the
+// picture either. The glide starts at az+40, el−10 from a real click on "Find the angle" and ends
+// idle at E; the tour starts at E (no tour=0), holds 1 s, eases from E to E for 2.2 s and holds
+// 5 s, so 4.5 s after the first frame it is in its hold at E. Both are compared with E set by URL
+// (t 0, the clock frozen) over the central region, clear of the bar and the hint.
+test('E reached by "Find the angle" or held by the tour renders as E set by URL', async (t) => {
+  await need(P.modes);
+  const sky = (await view(wide, at(0, 0, '&t=0&beta=0&layer=text'))).img;
+  const byUrl = lightOver((await view(wide, at(0, 0, '&t=0'))).img, sky, CENTRE).light;
+  const shoot = async (page) => decodePng(await page.screenshot({ animations: 'disabled' }));
+  const glide = async () => {
+    const page = await wides[1].newPage();
+    try {
+      await page.goto(PAGE_URL + '?' + at(40, -10, '&t=0'));
+      await waitFrames(page);
+      await page.click('#find');
+      await until(page, () => window.__cloud.mode() === 'idle' && window.__cloud.alignment() < 1e-6, null, 10000, 'the glide coming to rest at E');
+      await page.mouse.move(640, 400);                // off the button, so it shows no hover style
+      return { img: await shoot(page), s: await state(page) };
+    } finally { await page.close(); }
   };
-  await prefetch(wide, Object.values(views).flat().flatMap(([, q]) => [q, q + '&beta=0']));
-  const [controls, gated, cost] = [[], [], []];
-  for (const [name, q] of views.controls) controls.push([name, await residual(q)]);
-  for (const [name, q] of views.gated) gated.push([name, await residual(q)]);
-  for (const [name, q] of views.cost) cost.push([name, await residual(q)]);
-  const floor = mean(controls.flatMap(([, r]) => [r.row, r.col]));
-  const show = (rows) => rows.map(([n, r]) => `${n} ${r.row.toFixed(3)}/${r.col.toFixed(3)}`).join(', ');
-  t.diagnostic(`row/column residual over the cloud's own noise; floor ${floor.toFixed(3)} (controls ${show(controls)}); gated ${show(gated)}; accepted cost, not gated: ${show(cost)}`);
-  assert.ok(floor <= MAX_STREAK_FLOOR, `the floor ${floor.toFixed(3)} at the diagonal control views is above ${MAX_STREAK_FLOOR}: relocation shows structure even there, so a comparison with it would mean nothing`);
-  for (const [name, r] of gated) {
-    for (const k of ['row', 'col']) {
-      assert.ok(r[k] <= STREAK_K * floor, `${name}: the ${k === 'row' ? 'row' : 'column'} residual of the render minus its beta-0 twin is ${r[k].toFixed(3)}, above ${STREAK_K} × the floor ${floor.toFixed(3)} = ${(STREAK_K * floor).toFixed(3)}; relocation shows as ${k === 'row' ? 'horizontal' : 'vertical'} streaks there`);
-    }
+  const tour = async () => {
+    const page = await wides[2].newPage();
+    try {
+      await page.goto(`${PAGE_URL}?az=${E.az}&el=${E.el}&t=0`);
+      await waitFrames(page, 1);
+      await sleep(4500);
+      const s0 = await state(page);
+      const img = await shoot(page);
+      return { img, s0, s: await state(page) };
+    } finally { await page.close(); }
+  };
+  const [g, h] = await Promise.all([glide(), tour()]);
+  const rows = [['glide, then idle', g], ['tour hold', h]].map(([name, r]) => ({ name, r, k: lightOver(r.img, sky, CENTRE).light / byUrl }));
+  for (const { name, r, k } of rows) t.diagnostic(`${name}: mode ${r.s0 ? `${r.s0.mode} → ` : ''}${r.s.mode}, ${r.s.align.toFixed(6)}° from E; central particle light / E set by URL ${k.toFixed(4)}`);
+  assert.ok(h.s0.mode === 'tour' && h.s.mode === 'tour' && h.s0.align < 1e-6 && h.s.align < 1e-6, `the tour was not in its hold at E when shot: before ${JSON.stringify(h.s0)}, after ${JSON.stringify(h.s)}`);
+  const broken = rows.filter((r) => !(r.k >= MODE_BAND[0] && r.k <= MODE_BAND[1])).map((r) => `${r.name}: the particles in the centre carry ${r.k.toFixed(4)}× the light of E set by URL (must be within ${MODE_BAND.join('–')})`);
+  assertNone(broken, 'the camera mode must not change how E renders, but ');
+});
+
+// The residual compares each render with its beta-0 twin (the same cloud, nothing relocated); a
+// seed's floor is the mean residual at its two diagonal control views. At el±25 the text columns
+// survive the turn as faint streaks, the accepted cost, held to an absolute bound over the
+// cloud's own noise; the az±25 rows are reported over that noise too, ungated (see the header on β).
+test('relocation leaves no streaks at az±25, az+60 or the back, and el±25 stays below the bound (seeds 1–3)', async (t) => {
+  await need(P.streak);
+  const residual = async (q) => streakResidual((await view(wide, q)).lum, (await view(wide, q + '&beta=0')).lum, 1280, 800);
+  const V = STREAK(), per = [];
+  for (const s of SEEDS) {
+    const r = {};
+    for (const [name, q] of Object.values(V).flat()) r[name] = await residual(seeded(q, s));
+    per.push({ s, r, floor: mean(V.controls.flatMap(([name]) => [r[name].row, r[name].col])) });
   }
+  const show = (p, names) => names.map(([n]) => `${n} ${p.r[n].row.toFixed(3)}/${p.r[n].col.toFixed(3)}`).join(', ');
+  for (const p of per) t.diagnostic(`seed ${p.s}: row/column residual over the cloud's own noise; floor ${p.floor.toFixed(3)} (controls ${show(p, V.controls)}); gated ${show(p, V.gated)}; el±25 ${show(p, V.cost)}`);
+  const floor = mean(per.map((p) => p.floor));
+  const gated = V.gated.flatMap(([n]) => ['row', 'col'].map((k) => [n, k, mean(per.map((p) => p.r[n][k] / p.floor))]));
+  const cost = V.cost.map(([n]) => [n, mean(per.map((p) => p.r[n].col))]);
+  const azRows = ['az+25', 'az-25'].map((n) => `${n} ${mean(per.map((p) => p.r[n].row)).toFixed(3)}`).join(', ');
+  t.diagnostic(`mean over seeds ${SEEDS.join(', ')}: floor ${floor.toFixed(3)}; gated over the floor ${gated.map(([n, k, v]) => `${n} ${k} ${v.toFixed(3)}`).join(', ')}; el±25 column ${cost.map(([n, v]) => `${n} ${v.toFixed(3)}`).join(', ')}; az±25 row over the noise (not gated) ${azRows}`);
+  const broken = [];
+  if (!(floor <= MAX_STREAK_FLOOR)) broken.push(`the floor ${floor.toFixed(3)} at the diagonal control views is above ${MAX_STREAK_FLOOR}: relocation shows structure even there, so a comparison with it would mean nothing`);
+  for (const [n, k, v] of gated) if (!(v <= STREAK_K)) broken.push(`${n}: the ${k} residual of the render minus its beta-0 twin is ${v.toFixed(3)}× the floor, above ${STREAK_K}×; relocation shows as ${k === 'row' ? 'horizontal' : 'vertical'} streaks there`);
+  for (const [n, v] of cost) if (!(v <= MAX_EL_STREAK)) broken.push(`${n}: the column residual is ${v.toFixed(3)}× the cloud's own noise, above ${MAX_EL_STREAK}; the letter stems show as vertical streaks from ${n.startsWith('el+') ? 'above' : 'below'} E`);
+  assertNone(broken, `relocation must not show as streaks (means over seeds ${SEEDS.join(', ')}), but `);
 });
 
 test('the same seed builds the same cloud; another seed a different one', async (t) => {

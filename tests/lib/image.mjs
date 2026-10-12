@@ -205,6 +205,26 @@ export function unslant(m, lean) {
   return { W, H, mask: out, box: { x0, x1, y0, y1 } };
 }
 
+// The lean of one ink edge of a line from lineLayout, in degrees, positive when the edge leans
+// right going up: the Theil–Sen slope (the median over row pairs, so a row where a stray dot or a
+// gap in the stem moves the edge does not tilt it) of the line's leftmost ink per row with side
+// 'left', or its rightmost with 'right', over the rows more than `trim` of the line's height
+// from its top and bottom, so round caps do not count.
+export function edgeLean(m, line, side, trim = 0.15) {
+  const { W, mask } = m, pts = [];
+  for (let y = Math.ceil(line.y0 + trim * line.height); y <= Math.floor(line.y1 - trim * line.height); y++) {
+    let x = -1;
+    if (side === 'left') { for (let k = line.x0; k <= line.x1; k++) if (mask[y * W + k]) { x = k; break; } }
+    else for (let k = line.x1; k >= line.x0; k--) if (mask[y * W + k]) { x = k; break; }
+    if (x >= 0) pts.push([-y, x]);
+  }
+  const slopes = [];
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) slopes.push((pts[j][1] - pts[i][1]) / (pts[j][0] - pts[i][0]));
+  slopes.sort((a, b) => a - b);
+  const mid = slopes.length >> 1, slope = slopes.length % 2 ? slopes[mid] : (slopes[mid - 1] + slopes[mid]) / 2;
+  return { lean: (Math.atan(slope) * 180) / Math.PI, rows: pts.length };
+}
+
 // Mean luminance of `lum` on the strokes divided by the mean on the gap.
 export function strokeGapRatio(lum, m) {
   if (!m.strokes || !m.gaps) return NaN;
@@ -218,11 +238,13 @@ export function strokeGapRatio(lum, m) {
 // (red − blue) / (red + blue), and its effective area (Σl)² / Σl² over the per-pixel luminance l
 // (clamped at 0). For separate sprites of one shape the effective area is one sprite's area times
 // a factor that depends only on how their brightness is spread, so for the same particles drawn
-// two ways the ratio of effective areas is the ratio of their sprite sizes.
-export function lightOver(img, base) {
-  const a = img.rgb, b = base.rgb;
+// two ways the ratio of effective areas is the ratio of their sprite sizes. With `region`
+// ([x0, x1, y0, y1] as fractions of the width and height) only the pixels inside it count.
+export function lightOver(img, base, region = [0, 1, 0, 1]) {
+  const a = img.rgb, b = base.rgb, W = img.width, H = img.height;
+  const [x0, x1, y0, y1] = [Math.round(region[0] * W), Math.round(region[1] * W), Math.round(region[2] * H), Math.round(region[3] * H)];
   let r = 0, g = 0, bl = 0, L = 0, L2 = 0;
-  for (let o = 0; o < a.length; o += 3) {
+  for (let y = y0; y < y1; y++) for (let o = (y * W + x0) * 3, end = (y * W + x1) * 3; o < end; o += 3) {
     const dr = a[o] - b[o], dg = a[o + 1] - b[o + 1], db = a[o + 2] - b[o + 2];
     r += dr; g += dg; bl += db;
     const l = Math.max(0, 0.2126 * dr + 0.7152 * dg + 0.0722 * db);

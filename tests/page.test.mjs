@@ -4,18 +4,20 @@
 // loads (including the default tour, a "Find the angle" glide and both layers) log no console
 // errors and no page errors; the only request leaving the page is the Google Fonts stylesheet,
 // and if that stylesheet never answers the page still draws, within 2 s of the time the same load
-// takes with it answered (timed in the same test, through the harness's ready wait); nothing
-// overflows horizontally at 390 px; Tab reaches the canvas and then "Find the angle", each with a focus
-// style that changes pixels on screen, and keys work on the focused canvas; Chromium's
-// accessibility tree exposes the canvas as a focusable application with a role description and
-// a name that says what it shows and how to steer; without WebGL2 a message shows and the page
-// never reports ready. Each page's context is closed as soon as its check is done.
+// takes with it answered (the two loads started together in one browser, each timed to its first
+// frame); nothing overflows horizontally at 390 px; Tab reaches the canvas and then "Find the
+// angle", each with a focus style that changes pixels on screen, and keys work on the focused
+// canvas; Chromium's accessibility tree exposes the canvas as a focusable application with a role
+// description and a name that says what it shows and how to steer; without WebGL2 a message shows
+// and the page never reports ready. Each page's context is closed as soon as its check is done.
+// The timing check never runs beside the illusion file's renders: npm test and tests/mutate.mjs
+// run that file alone first (tests/lib/phases.mjs).
 // Does not prove other browsers, real GPUs, fonts loading over a real network, or how a screen
 // reader behaves with the canvas (none is available here; the role is what tells NVDA and JAWS
 // to pass the arrow keys through).
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startBrowser, openPage, sleep, PAGE_URL, FONT_CSS } from './lib/harness.mjs';
+import { startBrowser, openPage, waitFrames, sleep, PAGE_URL, FONT_CSS } from './lib/harness.mjs';
 import { decodePng } from './lib/image.mjs';
 
 const PHONE = { width: 390, height: 844, dpr: 2, isMobile: true, hasTouch: true };
@@ -146,27 +148,33 @@ test('the canvas is exposed as a focusable application with a label and a role d
 });
 
 test('the page draws even when the Google Fonts stylesheet never answers', async (t) => {
-  // Baseline: the same load with the stylesheet answered at once, opened through openPage. A page
-  // that cannot become ready at all fails there with a plain Error, which tests/mutate.mjs counts
-  // as an ERROR, not as a failed check of the font path. Its time (context, navigation, shader
-  // compile, first frames) on the same CPU load sets the bound for the hung load, so a page that
-  // holds its first frame for the font host, even for a few seconds, fails.
+  // Two loads of the page start together in this browser, so both see the same CPU load: a
+  // baseline with the stylesheet answered at once, and one with it never answered. Each is timed
+  // from its own start (context, navigation, shader compile) to its first drawn frame. The
+  // baseline waits through the harness, so a page that cannot become ready at all fails there with
+  // a plain Error, which tests/mutate.mjs counts as an ERROR, not as a failed check of the font
+  // path. A page that holds its first frame for the font host, even for a few seconds, fails.
   const MARGIN_MS = 2000, WAIT_MS = 15000;
-  const b0 = Date.now();
-  const baseline = await withPage('tour=0', { waitUntil: 'commit' }, async () => Date.now() - b0);
-  const bound = baseline + MARGIN_MS;
-  const t0 = Date.now();
-  const { ms, fontRequested } = await withPage('tour=0', { fonts: 'hang', ready: false, waitUntil: 'commit' }, async ({ page, log }) => {
-    let ms = null;
-    try {
-      await page.waitForFunction(() => window.__cloud && window.__cloud.ready, null, { timeout: WAIT_MS });
-      ms = Date.now() - t0;
-    } catch (err) {
-      if (err?.name !== 'TimeoutError') throw err;   // only "never drew" is reported below as a check
-    }
-    return { ms, fontRequested: log.requests.some((u) => FONT_CSS.test(u)) };
-  });
-  t.diagnostic(`drew in ${baseline} ms with the stylesheet answered and in ${ms ?? `more than ${WAIT_MS}`} ms with it hung (bound ${bound} ms)`);
+  const timed = (fonts, untilDrawn) => {
+    const t0 = Date.now();
+    return withPage('tour=0', { fonts, ready: false, waitUntil: 'commit' }, async ({ page, log }) => ({ ms: await untilDrawn(page, t0), fontRequested: log.requests.some((u) => FONT_CSS.test(u)) }));
+  };
+  const [answered, hung] = await Promise.allSettled([
+    timed('empty', async (page, t0) => { await waitFrames(page, 0); return Date.now() - t0; }),
+    timed('hang', async (page, t0) => {
+      try {
+        await page.waitForFunction(() => window.__cloud && window.__cloud.ready, null, { timeout: WAIT_MS });
+        return Date.now() - t0;
+      } catch (err) {
+        if (err?.name !== 'TimeoutError') throw err;   // only "never drew" is reported below as a check
+        return null;
+      }
+    }),
+  ]);
+  if (answered.status === 'rejected') throw answered.reason;
+  if (hung.status === 'rejected') throw hung.reason;
+  const baseline = answered.value.ms, { ms, fontRequested } = hung.value, bound = baseline + MARGIN_MS;
+  t.diagnostic(`drew in ${baseline} ms with the stylesheet answered and in ${ms ?? `more than ${WAIT_MS}`} ms with it hung, both loads started together (bound ${bound} ms)`);
   assert.ok(fontRequested, 'the page never requested the Google Fonts stylesheet, so the hang was not exercised');
   assert.ok(ms !== null, `window.__cloud.ready was still false ${WAIT_MS} ms after navigation while the Google Fonts stylesheet hung; with it answered the page drew in ${baseline} ms`);
   assert.ok(ms <= bound, `the page took ${ms} ms to draw while the Google Fonts stylesheet hung but ${baseline} ms with it answered; it must draw within that plus ${MARGIN_MS} ms (${bound} ms), so a slow font host does not hold it up`);

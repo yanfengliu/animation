@@ -28,22 +28,35 @@ import { run } from 'node:test';
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { phases } from './lib/phases.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'tmp', 'mutants');
-const PAGE_GATES = ['tests/illusion.test.mjs', 'tests/controls.test.mjs', 'tests/page.test.mjs'];
+const PAGE_GATES = ['tests/illusion.test.mjs', 'tests/controls.test.mjs', 'tests/motion.test.mjs', 'tests/page.test.mjs'];
 const HYGIENE_GATE = ['tests/hygiene.test.mjs'];
 
 // The reveal the owner rejected (2026-10-11: "Some of the dots are lighting up more as I approach
 // the intended angle. This is cheating."), put back near E: u_near is 1 at E and falls to 0 at 12°.
 const NEAR_UNIFORM = ['uniform float u_time, u_ppu, u_aperture, u_focus, u_minPx, u_maxPx, u_swell;', 'uniform float u_time, u_ppu, u_aperture, u_focus, u_minPx, u_maxPx, u_swell, u_near;'];
-const NEAR_SET = ['gl.uniform1f(u.u_swell, SWELL);', 'gl.uniform1f(u.u_swell, SWELL);\n  gl.uniform1f(u.u_near, Math.max(0, 1 - alignDeg() / 12));'];
+const nearSet = (expr) => ['gl.uniform1f(u.u_swell, SWELL);', `gl.uniform1f(u.u_swell, SWELL);\n  gl.uniform1f(u.u_near, ${expr});`];
+const NEAR = 'Math.max(0, 1 - alignDeg() / 12)';
+const NEAR_SET = nearSet(NEAR);
 const PARTICLE_COLOUR = 'v_col = u_pal[code & 3] * (level * tw * fade * energy);';
+const TEXT_BRIGHTER = [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.25 * text * u_near));'];
 const BETA_LINE = 'const BETA_DEFAULT = 0.85;';
+const DEFAULT_DRAW = 'else gl.drawArrays(gl.POINTS, 0, N_TOTAL);';
 
 const PAGE_MUTANTS = [
   { name: 'reveal-brighter', defect: 'text particles brighten near E, up to 1.25× at E (a reveal)',
-    edits: [NEAR_UNIFORM, NEAR_SET, [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.25 * text * u_near));']] },
+    edits: [NEAR_UNIFORM, NEAR_SET, TEXT_BRIGHTER] },
+  { name: 'reveal-extra-text-pass', defect: 'the shipped draw alone adds a second pass of the text particles near E, at 25% of their light at E (a reveal that the layer=text and layer=ambient draws do not show)',
+    edits: [[DEFAULT_DRAW, `else {\n    gl.drawArrays(gl.POINTS, 0, N_TOTAL);\n    const k = 0.25 * ${NEAR};\n    if (k > 0) { gl.blendColor(k, k, k, 1); gl.blendFunc(gl.CONSTANT_COLOR, gl.ONE); gl.drawArrays(gl.POINTS, 0, cloud.nText); }\n  }`]] },
+  { name: 'reveal-on-tour', defect: 'text particles brighten near E only while the tour runs, up to 1.25× during its hold at E (a reveal that views with tour=0 do not show)',
+    edits: [NEAR_UNIFORM, nearSet(`mode === 'tour' ? ${NEAR} : 0`), TEXT_BRIGHTER] },
+  { name: 'reveal-after-glide', defect: 'once "Find the angle" has glided to E, text particles brighten near E, up to 1.25× at E (a reveal that views set by URL do not show)',
+    edits: [NEAR_UNIFORM, nearSet(`found ? ${NEAR} : 0`), TEXT_BRIGHTER,
+      ['let ready = false, frames = 0;', 'let ready = false, frames = 0, found = false;'],
+      ["if (stepAnim(now)) { if (mode === 'tour') tourStep(); else mode = 'idle'; }", "if (stepAnim(now)) { if (mode === 'tour') tourStep(); else { if (mode === 'glide') found = true; mode = 'idle'; } }"]] },
   { name: 'reveal-gold', defect: 'text particles take a gold tint near E, 30% at E (a reveal)',
     edits: [NEAR_UNIFORM, NEAR_SET, [PARTICLE_COLOUR, 'v_col = mix(u_pal[code & 3], vec3(1.0, 0.78, 0.46), 0.3 * text * u_near) * (level * tw * fade * energy);']] },
   { name: 'reveal-bigger', defect: 'text particles grow near E, up to 1.25× wider at E (a reveal)',
@@ -74,6 +87,8 @@ const PAGE_MUTANTS = [
     edits: [['const r = norm(cross(f, [0, 1, 0]));', 'const r = norm(cross([0, 1, 0], f));']] },
   { name: 'upright-letters', defect: 'the letters stand upright again, so from above and below E their stems show as vertical streaks (the W8 page)',
     edits: [['const SLANT = 14;', 'const SLANT = 0;']] },
+  { name: 'slant-5', defect: 'the letters lean only 5° (less italic), so from above and below E their stems spread over few columns and most of the vertical streaks come back',
+    edits: [['const SLANT = 14;', 'const SLANT = 5;']] },
   { name: 'no-phone-widening', defect: 'narrow screens keep the plain 50° field of view, so the text block is cropped at 390×844',
     edits: [['const baseTan = (aspect) => Math.max(Math.tan(BASE_FOV * DEG / 2), FIT_HALF_WIDTH / R / aspect);', 'const baseTan = (aspect) => Math.tan(BASE_FOV * DEG / 2);']] },
   { name: 'seed-ignored', defect: 'the seed parameter is ignored, so every seed builds the default cloud',
@@ -176,6 +191,29 @@ const TREE_MUTANTS = [
     } },
   { name: 'npx-versioned-playwright-open', defect: 'an npm script opens the page in a visible browser through a version-pinned npx playwright@<version> (R2-2)',
     apply: (dir) => addNpmScript(dir, 'view', j('npx playwright@1.63.0 o', 'pen index.html')) },
+  { name: 'powershell-quoted-opener', defect: 'an npm script hands Windows PowerShell a quoted command that opens the page, with no switch before the quote (R3-6)',
+    apply: (dir) => addNpmScript(dir, 'view', j('powershell "st', 'art index.html"')) },
+  { name: 'powershell-switch-opener', defect: 'an npm script hands Windows PowerShell a quoted command that opens the page, after a switch that is not -Command (R3-6)',
+    apply: (dir) => addNpmScript(dir, 'view', j('powershell -NoProfile "i', 'i index.html"')) },
+  { name: 'popup-pause', defect: "a test helper pauses a popup page that it awaited from a stored waitForEvent promise, Playwright's documented popup pattern (R3-6)",
+    apply: (dir) => writeIn(dir, 'tests/lib/debug.mjs', [
+      'export async function holdPopup(page) {',
+      j("  const popupPromise = page.waitFor", "Event('popup');"),
+      "  await page.click('a');",
+      '  const popup = await popupPromise;',
+      j('  await popup.pa', 'use();'),
+      '}', '',
+    ].join('\n')) },
+  { name: 'destructured-popup-pause', defect: 'a test helper pauses a popup page that it destructured from a Promise.all over waitForEvent and a click (R3-6)',
+    apply: (dir) => writeIn(dir, 'tests/lib/debug.mjs', [
+      'export async function holdPopup(page) {',
+      '  const [popup] = await Promise.all([',
+      j("    page.waitFor", "Event('popup'),"),
+      "    page.click('a'),",
+      '  ]);',
+      j('  await popup.pa', 'use();'),
+      '}', '',
+    ].join('\n')) },
 ];
 function writeHook(dir, command) {
   writeIn(dir, '.claude/settings.json', JSON.stringify({ hooks: { PostToolUse: [{ matcher: 'Edit|Write', hooks: [{ type: 'command', command }] }] } }, null, 2) + '\n');
@@ -213,22 +251,24 @@ function writeTreeMutant(m) {
   return path.relative(ROOT, dir);
 }
 
-// Runs the gate files with the given environment. Each failed top-level test comes back with its
-// kind: 'check' for an AssertionError thrown in the test body, 'error' for anything else.
+// Runs the gate files with the given environment, in the phases npm test uses (the illusion file
+// alone, then the rest two at a time; tests/lib/phases.mjs). Each failed top-level test comes back
+// with its kind: 'check' for an AssertionError thrown in the test body, 'error' for anything else.
 async function runGates(files, env) {
   Object.assign(process.env, env);
   const failed = [];
   let passed = 0;
   try {
-    const stream = run({ files: files.map((f) => path.join(ROOT, f)), concurrency: 2, cwd: ROOT });
-    for await (const ev of stream) {
+    for (const group of phases(files)) for await (const ev of run({ files: group.map((f) => path.join(ROOT, f)), concurrency: 2, cwd: ROOT })) {
       if (ev.type === 'test:pass' && ev.data.nesting === 0 && ev.data.details?.type !== 'suite') passed++;
       if (ev.type !== 'test:fail' || ev.data.nesting !== 0) continue;
       const err = ev.data.details?.error;
       const cause = err?.cause ?? err;
       const check = err?.failureType === 'testCodeFailure' && (cause?.code === 'ERR_ASSERTION' || cause?.name === 'AssertionError');
       const kind = check ? 'check' : `error (${err?.failureType ?? 'unknown'}${cause?.name ? ', ' + cause.name : ''})`;
-      const where = /tests[\\/][\w.-]+\.test\.mjs:\d+/.exec(String(cause?.stack ?? ''))?.[0]?.replace(/\\/g, '/') ?? `${path.basename(ev.data.file ?? '?')}`;
+      // The line in the test body itself when the stack has it (a helper's assert sits above it).
+      const stack = String(cause?.stack ?? ''), FRAME = String.raw`tests[\\/][\w.-]+\.test\.mjs:\d+`;
+      const where = (new RegExp(String.raw`TestContext\.<anonymous> \(.*?(` + FRAME + ')').exec(stack)?.[1] ?? new RegExp(FRAME).exec(stack)?.[0])?.replace(/\\/g, '/') ?? `${path.basename(ev.data.file ?? '?')}`;
       // A list check (deepEqual against []) names its offenders in `actual`: show the first.
       const list = Array.isArray(cause?.actual) && cause.actual.length ? ` [${cause.actual[0]}${cause.actual.length > 1 ? ` and ${cause.actual.length - 1} more` : ''}]` : '';
       failed.push({ test: ev.data.name, kind, check, where, message: String(cause?.message ?? cause).split('\n')[0] + list });
