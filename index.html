@@ -16,7 +16,6 @@
     --p-cyan: #93e7ff;
     --p-lavender: #c2b3ff;
     --p-amber: #ffbb6b;
-    --p-gold: #ffc775;
     --ink: #e1e9ff;
     --ink-soft: #b4c1e4;
     --ink-muted: #7d8bb3;
@@ -92,7 +91,11 @@ const EL_LIMIT = 70 * DEG;
 const BASE_FOV = 50;                               // vertical FOV on wide screens, degrees
 const ZOOM_MIN = 0.5, ZOOM_MAX = 4;                // zoom scales tan(fov/2); the eye never moves
 const N_TOTAL = 18000, OUTLIER_SHARE = 0.05;
-const BETA = 0.2;                                  // peak chance that a particle becomes text
+// Peak chance that a particle becomes text. Text and ambient particles look alike, so the words
+// show at E by density alone: about 3× the ambient density on the strokes at 0.85. The cost:
+// turning the camera keeps the text rows (azimuth) or columns (elevation) as streaks, and the
+// columns still show 25° away in elevation (docs/work/0_hello-world-cloud, W8's measurements).
+const BETA_DEFAULT = 0.85;
 const TEXT_SCALE = 2.65;                           // world units per x-height on the text plane
 const SWELL = 0.8;                                 // bob along sight lines from E, world units
 const DRAG_RATE = 0.004;                           // radians per CSS pixel
@@ -110,12 +113,16 @@ const fixedT = numParam('t');
 const layer = params.get('layer');
 const seed = params.get('seed') || '1';
 const tourParam = params.get('tour') !== '0';
+// Test hook: beta=<0..1> sets β, the peak relocation chance; anything else keeps the default.
+// Relocation draws from its own random streams, so the base cloud is the same for every β and
+// render(β) − render(0) isolates what relocation adds.
+const betaParam = numParam('beta');
+const BETA = betaParam !== null && betaParam >= 0 && betaParam <= 1 ? betaParam : BETA_DEFAULT;
 const motionQuery = matchMedia('(prefers-reduced-motion: reduce)');
 let reduced = motionQuery.matches;
 
 // ------------------------------------------------------------------ small maths
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
-const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const wrapPi = (a) => a - 2 * Math.PI * Math.floor((a + Math.PI) / (2 * Math.PI));
 const easeSine = (t) => 0.5 - 0.5 * Math.cos(Math.PI * t);
 const easeCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(2 - 2 * t, 3) / 2);
@@ -243,8 +250,10 @@ function buildMask() {
   for (let i = 0; i < B.length; i++) bmax = Math.max(bmax, B[i]);
   // Three box passes of width w have variance 3(w²−1)/12; the landing kernel uses the same sigma.
   const sigma = Math.sqrt(((2 * BOX + 1) ** 2 - 1) / 4) / (PX / CF);
+  let inside = 0;
+  for (let i = 0; i < S.length; i++) inside += S[i];
   return {
-    sigma, bmax, halfW, top, bottom,
+    sigma, bmax, halfW, top, bottom, area: inside / (PX * PX),   // area: stroke area, x-height²
     S: (ux, uy) => {
       const px = Math.floor((ux - x0) * PX), py = Math.floor((y1 - uy) * PX);
       return px >= 0 && py >= 0 && px < W && py < H && S[py * W + px] === 1;
@@ -257,10 +266,12 @@ function buildMask() {
 }
 
 // Even out the landing points (blue noise inside the strokes) with a few rounds of short-range
-// repulsion in plane units. Moves stay near 0.05 x-height, far below sigma, so the density
-// that hides the text elsewhere is unchanged; from E the strokes fill without clumps or holes.
+// repulsion in plane units. The reach is 1.34 mean spacings of the landing points (0.085 x-height
+// at β 0.2, about 0.04 at the default), so dense strokes fill evenly instead of piling up at their
+// edges. Each move is a fraction of that reach, far below sigma, so the density that hides the
+// text elsewhere is unchanged; from E the strokes fill without clumps or holes.
 function relax(land, mask) {
-  const r = 0.085, key = (x, y) => (Math.floor(x / r) + 512) * 1024 + Math.floor(y / r) + 512;
+  const r = Math.max(0.02, 1.34 * Math.sqrt(mask.area / Math.max(1, land.length))), key = (x, y) => (Math.floor(x / r) + 512) * 1024 + Math.floor(y / r) + 512;
   for (let round = 0; round < 6; round++) {
     const grid = new Map();
     for (const p of land) { const k = key(p[1], p[2]); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(p); }
@@ -282,19 +293,24 @@ function relax(land, mask) {
 }
 
 // ------------------------------------------------------------------ cloud
-// Layout per particle (10 floats): position, sight-line direction (zero for ambient),
-// seeds (size, phase, rate, colour class + 4 for outliers). Text particles come first.
-function buildCloud(mask) {
-  const rand = makeRandom('cloud:' + seed);
+// Standard normal draws (polar method) from the uniform stream rnd.
+function gaussian(rnd) {
   let spare = null;
-  const gauss = () => {
+  return () => {
     if (spare !== null) { const s = spare; spare = null; return s; }
     let u, v, s;
-    do { u = rand() * 2 - 1; v = rand() * 2 - 1; s = u * u + v * v; } while (s >= 1 || s === 0);
+    do { u = rnd() * 2 - 1; v = rnd() * 2 - 1; s = u * u + v * v; } while (s >= 1 || s === 0);
     const m = Math.sqrt(-2 * Math.log(s) / s);
     spare = v * m;
     return u * m;
   };
+}
+
+// Layout per particle (10 floats): position, sight-line direction (zero for ambient),
+// seeds (size, phase, rate, colour class + 4 for outliers). Text particles come first.
+function buildCloud(mask) {
+  const rand = makeRandom('cloud:' + seed);
+  const gauss = gaussian(rand);
   const randDir = () => {
     const z = rand() * 2 - 1, a = rand() * 2 * Math.PI, r = Math.sqrt(1 - z * z);
     return [r * Math.cos(a), z, r * Math.sin(a)];
@@ -331,9 +347,13 @@ function buildCloud(mask) {
   // β·B(u)/Bmax, P moves sideways onto a stroke point u' drawn from the same Gaussian around u,
   // keeping its distance from E. Density is unchanged at scales above sigma (hidden elsewhere);
   // from E the stroke density is uniform because rate and landing kernel share B.
+  // Relocation has its own streams, so the cloud drawn above is the same for every β. Each
+  // particle takes one pick draw whatever β is, so a larger β only adds text particles.
+  const pick = makeRandom('relocate:' + seed), landGauss = gaussian(makeRandom('land:' + seed));
   const isText = new Uint8Array(N_TOTAL);
   const land = [];                                  // [particle, u'x, u'y] for each text particle
   for (let i = 0; i < nCloud; i++) {
+    const chance = pick();
     const dx = P[i * 3] - E_POS[0], dy = P[i * 3 + 1] - E_POS[1], dz = P[i * 3 + 2] - E_POS[2];
     const along = dx * E_FWD[0] + dy * E_FWD[1] + dz * E_FWD[2];
     if (along < 1) continue;
@@ -341,9 +361,9 @@ function buildCloud(mask) {
     const ux = k * (dx * E_RIGHT[0] + dy * E_RIGHT[1] + dz * E_RIGHT[2]);
     const uy = k * (dx * E_UP[0] + dy * E_UP[1] + dz * E_UP[2]);
     const b = mask.B(ux, uy);
-    if (b <= 0 || rand() >= BETA * b / mask.bmax) continue;
+    if (b <= 0 || chance >= BETA * b / mask.bmax) continue;
     for (let tries = 0; tries < 64; tries++) {
-      const vx = ux + mask.sigma * gauss(), vy = uy + mask.sigma * gauss();
+      const vx = ux + mask.sigma * landGauss(), vy = uy + mask.sigma * landGauss();
       if (mask.S(vx, vy)) { land.push([i, vx, vy]); isText[i] = 1; break; }
     }
   }
@@ -436,10 +456,10 @@ layout(location = 1) in vec3 a_dir;    // unit sight line from E for text partic
 layout(location = 2) in vec4 a_seed;   // size, phase, rate, colour class (+4 for outliers)
 uniform mat4 u_view, u_proj;
 uniform vec3 u_eyeE;
-uniform float u_time, u_ppu, u_aperture, u_focus, u_hint, u_lock, u_minPx, u_maxPx, u_swell;
-uniform vec3 u_pal[5];                 // moon, cyan, lavender, amber, gold
+uniform float u_time, u_ppu, u_aperture, u_focus, u_minPx, u_maxPx, u_swell;
+uniform vec3 u_pal[4];                 // moon, cyan, lavender, amber
 out vec3 v_col;
-out float v_quad, v_core, v_disc, v_blur, v_halo;
+out float v_quad, v_core, v_disc, v_blur;
 
 // Smooth travelling phase: neighbours bob together.
 float swell(vec3 p, float t) {
@@ -472,12 +492,10 @@ void main() {
   gl_Position = u_proj * vp;
 
   float wsize = outlier ? mix(0.07, 0.16, a_seed.x) : mix(0.045, 0.17, pow(a_seed.x, 3.0));
-  wsize *= 1.0 + 0.65 * u_lock * text;                    // text swells a little at the angle
   float core = wsize * u_ppu / depth;                     // perspective size in device px
   float energy = 1.0;
   if (core < u_minPx) { energy = (core / u_minPx) * (core / u_minPx); core = u_minPx; }
   float coc = u_aperture * u_ppu * abs(depth - u_focus) / (depth * u_focus);
-  coc *= 1.0 - 0.9 * u_lock * text;                       // text comes into focus at the angle
   float disc = core + coc;
   energy *= max((core / disc) * (core / disc), 0.05);     // blur spreads the same light wider
   float quad = min(max(core * 3.2, disc + 2.0), u_maxPx);
@@ -488,26 +506,22 @@ void main() {
   tw += 0.6 * pow(max(0.0, sin(t * 0.37 * rate + a_seed.y * 40.0)), 30.0);
   float fade = mix(1.0, 0.55, smoothstep(u_focus - 8.0, u_focus + 14.0, depth));
   float level = 0.46 * (0.5 + fract(a_seed.y * 13.37));
-  vec3 col = u_pal[code & 3];
-  // Approach cue: inside about 20° text particles warm and brighten (hint, full by 12°), so the
-  // two lines show as gold bands that tighten as the smear shrinks; lock adds focus, size and glow.
-  col = mix(col, u_pal[4], text * u_hint);
-  float gain = text > 0.5 ? 1.0 + u_hint : 1.0 - 0.35 * u_lock;
-  v_col = col * (level * tw * fade * gain * energy);
+  // Text and ambient particles follow the same rules at every angle, E included: the words
+  // show at E only because the text particles line up there.
+  v_col = u_pal[code & 3] * (level * tw * fade * energy);
   v_quad = quad; v_core = core; v_disc = disc; v_blur = coc / disc;
-  v_halo = 0.08 + 0.14 * u_lock * text;                   // aligned text glows into strokes
 }`;
 
 const PARTICLE_FS = `#version 300 es
 precision highp float;
 in vec3 v_col;
-in float v_quad, v_core, v_disc, v_blur, v_halo;
+in float v_quad, v_core, v_disc, v_blur;
 out vec4 o;
 void main() {
   float r = length(gl_PointCoord - 0.5) * v_quad;        // device px from the sprite centre
   float sc = max(0.36 * v_core, 0.55);
   float k = r * r / (sc * sc);
-  float sharp = exp(-0.5 * k) + v_halo * exp(-0.125 * k); // Gaussian core plus a faint halo
+  float sharp = exp(-0.5 * k) + 0.08 * exp(-0.125 * k);  // Gaussian core plus a faint halo
   float rd = 0.5 * v_disc;
   float disc = 1.6 * clamp(rd - r + 0.5, 0.0, 1.0) * (0.8 + 0.2 * clamp(r / rd, 0.0, 1.0));
   float shape = mix(sharp, disc, smoothstep(0.1, 0.8, v_blur));
@@ -548,7 +562,7 @@ const COLORS = {
   top: tokenColor('--sky-top', [0.01, 0.02, 0.04]),
   bottom: tokenColor('--sky-bottom', [0.04, 0.09, 0.19]),
   glow: tokenColor('--sky-glow', [0.1, 0.17, 0.35]),
-  pal: new Float32Array(['--p-moon', '--p-cyan', '--p-lavender', '--p-amber', '--p-gold'].flatMap((n) => tokenColor(n, [0.85, 0.9, 1]))),
+  pal: new Float32Array(['--p-moon', '--p-cyan', '--p-lavender', '--p-amber'].flatMap((n) => tokenColor(n, [0.85, 0.9, 1]))),
 };
 
 let glr = null;             // GL resources, rebuilt after a context loss
@@ -611,7 +625,6 @@ function draw() {
   if (!glr) return;
   const th = tanHalf(), aspect = w / h;
   const eye = eyeDir(cam.az, cam.el).map((v) => v * R);
-  const delta = alignDeg();
   gl.viewport(0, 0, w, h);
   gl.disable(gl.BLEND);
   const sky = glr.sky;
@@ -632,10 +645,8 @@ function draw() {
   gl.uniform3fv(u.u_eyeE, E_POS);
   gl.uniform1f(u.u_time, clock);
   gl.uniform1f(u.u_ppu, h / 2 / th);
-  gl.uniform1f(u.u_aperture, 0.22);
+  gl.uniform1f(u.u_aperture, 0.14);
   gl.uniform1f(u.u_focus, R);
-  gl.uniform1f(u.u_hint, 1 - smoothstep(12, 22, delta));  // exactly zero beyond 22°: text looks ambient
-  gl.uniform1f(u.u_lock, 1 - smoothstep(0.8, 6, delta));
   gl.uniform1f(u.u_minPx, 1.5);
   gl.uniform1f(u.u_maxPx, Math.min(glr.maxPoint, 160 * ratio));
   gl.uniform1f(u.u_swell, SWELL);

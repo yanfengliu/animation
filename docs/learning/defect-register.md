@@ -46,3 +46,36 @@ Defects the owner reported, each with the symptom as they saw it, what the inves
   - files outside its paths that no command names: `docs/`, `tmp/`, `node_modules` and its install scripts, git hooks, `~/.claude`, settings files `.gitignore` names, and agents' scratch scripts outside the repo.
 - The working rule is staged as a canon candidate in `fleet/canon-candidates.md` at fleet `f44e26e`: write captures and downloads to known paths from code, never open a local file in a visible browser or the app's pane, and change `.html` files with a Node `fs` script, not the editor tools.
 - The app-side trigger itself has no repo gate. No test in this repo can see what the desktop app's pane does when a file is edited, so that part rests on the working rule until the app's behaviour is explained or configurable.
+
+## Text particles lit up near the secret angle (2026-10-11)
+
+**Reported symptom:** in the owner's words: "Some of the dots are lighting up more as I approach the intended angle. This is cheating. They need to be glowing consistently no matter what angle. The words should be entirely depending on the right angle to be obvious."
+
+**Investigation:** the particle shader took two uniforms set each frame from the camera's angle to E.
+
+- `u_hint` rose from 0 at 22° to 1 at 12°. It tinted text particles toward a gold palette entry and doubled their light.
+- `u_lock` rose from 0 at 6° to 1 at 0.8°. It made text particles 1.65× bigger, cut their defocus blur by 90%, strengthened their halo, and dimmed ambient particles by 35%.
+- Both came with the page in `7d071e3`. `76bc0d6` widened them to make the approach findable by hand: the hint's ramp moved from 3–28° to 12–22°, and the gold tint and the doubled light moved from the lock to the hint, so they reached full strength 12° out.
+- They made up for β 0.2. Without them that page measured a stroke/gap ratio of only 1.35–1.38 at E (W8).
+- The gates then required the reveal: "at E a text particle carries at least 3× the light of an ambient one and is warmer". So the gate defended the defect.
+
+**Root cause:** legibility was bought with angle-dependent rendering instead of geometry. The words read at E because the text particles lit up there, not only because they lined up.
+
+**Fix (W8, committed together with the new gate):** both uniforms and the gold entry are gone, and every particle uses one colour, size and focus rule at every angle. β rose to 0.85 and the depth-of-field aperture fell to 0.14, so the words read at E by density alone (stroke/gap 1.58–1.68). The coordinator accepted the cost: from el±15–25° the text columns show as vertical streaks.
+
+**How it is now checked:**
+
+- `tests/illusion.test.mjs`, "every particle renders alike at every angle: no reveal near E", compares each text particle with itself drawn as an ambient particle. It uses the test-only `beta` parameter: `beta=0` makes every particle ambient without moving the base cloud.
+  - At E, 3° from E, az+25, el−25 and the back, the text particles' light must be within 10% of the same particles drawn as ambient (0.99–1.01 measured), their warmth within 0.03 (0.007 at most), and their sprite size within 15% at `beta=0.02`, where the sprites are separate (0.96–1.02).
+  - The whole scene's particle light at E and 3° must be within 15% of its mean at the far views (0.96 measured), so the cloud as a whole cannot glow up near E either.
+- The legibility checks now also require relocation to lift the stroke/gap ratio at least 1.35× over the same view at `beta=0` (1.49–1.65 measured), so the words must come from positions.
+- Mutants in `tests/mutate.mjs` put a reveal back, and each must be killed:
+  - `reveal-brighter`: text 1.25× brighter at E, fading out by 12°.
+  - `reveal-gold`: a 30% gold tint on text at E.
+  - `reveal-bigger`: text sprites 1.25× wider at E.
+  - `reveal-sharper`: text defocus blur cut by 75% at E.
+  - `text-always-brighter`: text 1.4× brighter at every angle.
+  - `scene-glows-at-angle`: every particle 1.4× brighter at E.
+  - `weak-relocation`: β back at 0.2, now without the reveal, so the words must fail to read.
+- The `text-always-lit` and `reveal-off` mutants tested the old design and are retired.
+- What the checks cannot see: a reveal confined to angles between the measured views (for example only 8–20° from E), lighting outside the particles (the sky, the UI), and times other than t 0.

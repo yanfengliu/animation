@@ -34,7 +34,33 @@ const OUT = path.join(ROOT, 'tmp', 'mutants');
 const PAGE_GATES = ['tests/illusion.test.mjs', 'tests/controls.test.mjs', 'tests/page.test.mjs'];
 const HYGIENE_GATE = ['tests/hygiene.test.mjs'];
 
+// The reveal the owner rejected (2026-10-11: "Some of the dots are lighting up more as I approach
+// the intended angle. This is cheating."), put back near E: u_near is 1 at E and falls to 0 at 12°.
+const NEAR_UNIFORM = ['uniform float u_time, u_ppu, u_aperture, u_focus, u_minPx, u_maxPx, u_swell;', 'uniform float u_time, u_ppu, u_aperture, u_focus, u_minPx, u_maxPx, u_swell, u_near;'];
+const NEAR_SET = ['gl.uniform1f(u.u_swell, SWELL);', 'gl.uniform1f(u.u_swell, SWELL);\n  gl.uniform1f(u.u_near, Math.max(0, 1 - alignDeg() / 12));'];
+const PARTICLE_COLOUR = 'v_col = u_pal[code & 3] * (level * tw * fade * energy);';
+const BETA_LINE = 'const BETA_DEFAULT = 0.85;';
+
 const PAGE_MUTANTS = [
+  { name: 'reveal-brighter', defect: 'text particles brighten near E, up to 1.25× at E (a reveal)',
+    edits: [NEAR_UNIFORM, NEAR_SET, [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.25 * text * u_near));']] },
+  { name: 'reveal-gold', defect: 'text particles take a gold tint near E, 30% at E (a reveal)',
+    edits: [NEAR_UNIFORM, NEAR_SET, [PARTICLE_COLOUR, 'v_col = mix(u_pal[code & 3], vec3(1.0, 0.78, 0.46), 0.3 * text * u_near) * (level * tw * fade * energy);']] },
+  { name: 'reveal-bigger', defect: 'text particles grow near E, up to 1.25× wider at E (a reveal)',
+    edits: [NEAR_UNIFORM, NEAR_SET, ['float core = wsize * u_ppu / depth;', 'wsize *= 1.0 + 0.25 * text * u_near;\n  float core = wsize * u_ppu / depth;']] },
+  { name: 'reveal-sharper', defect: 'text particles come into focus near E, their blur cut by 75% at E (a reveal)',
+    edits: [NEAR_UNIFORM, NEAR_SET, ['float coc = u_aperture * u_ppu * abs(depth - u_focus) / (depth * u_focus);', 'float coc = u_aperture * u_ppu * abs(depth - u_focus) / (depth * u_focus);\n  coc *= 1.0 - 0.75 * text * u_near;']] },
+  { name: 'text-always-brighter', defect: 'text particles carry 1.4× the light of ambient ones at every angle, so the words read by brightness and the text particles stand out everywhere',
+    edits: [[PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.4 * text));']] },
+  { name: 'scene-glows-at-angle', defect: 'every particle brightens near E, up to 1.4× at E, so the whole cloud glows brighter as the camera nears the angle',
+    edits: [NEAR_UNIFORM, NEAR_SET, [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.4 * u_near));']] },
+  { name: 'weak-relocation', defect: 'β falls back to 0.2, the rate the reveal used to make up for, so the words barely show at E',
+    edits: [[BETA_LINE, 'const BETA_DEFAULT = 0.2;']] },
+  { name: 'full-relocation', defect: 'β rises to 1.0, past the accepted balance, so the text rows show as streaks from az+25',
+    edits: [[BETA_LINE, 'const BETA_DEFAULT = 1.0;']] },
+  { name: 'no-density-compensation', defect: 'text particles come from anywhere in the cloud and land anywhere on the strokes, not from near their landing points, so nothing offsets the extra density along the stroke sight lines',
+    edits: [['if (b <= 0 || chance >= BETA * b / mask.bmax) continue;', 'if (chance >= 0.3 * BETA / 0.85) continue;'],
+      ['const vx = ux + mask.sigma * landGauss(), vy = uy + mask.sigma * landGauss();', 'const vx = 1.6 * landGauss(), vy = -0.7 + 1.3 * landGauss();']] },
   { name: 'text-drifts-sideways', defect: 'text particles get the ambient drift across their sight lines',
     edits: [['p += a_dir * s;', 'p += a_dir * s + drift(a_pos, t);']] },
   { name: 'zoom-dollies-eye', defect: 'zoom moves the eye toward the cloud instead of narrowing the field of view (view() still reports the zoomed fov)',
@@ -44,20 +70,14 @@ const PAGE_MUTANTS = [
     edits: [['P[i * 3 + a] = E_POS[a] + dirs[i * 3 + a] * dist;', '/* mutant: no relocation */']] },
   { name: 'flat-text', defect: 'text particles are moved onto the text plane, a flat sign readable from the side',
     edits: [['P[i * 3 + a] = E_POS[a] + dirs[i * 3 + a] * dist;', 'P[i * 3 + a] = E_POS[a] + dirs[i * 3 + a] * tl;']] },
-  { name: 'text-always-lit', defect: 'the approach cue and lock ignore the angle, so text particles always glow gold',
-    edits: [['gl.uniform1f(u.u_hint, 1 - smoothstep(12, 22, delta));', 'gl.uniform1f(u.u_hint, 1);'],
-      ['gl.uniform1f(u.u_lock, 1 - smoothstep(0.8, 6, delta));', 'gl.uniform1f(u.u_lock, 1);']] },
-  { name: 'reveal-off', defect: 'the reveal never engages: u_hint and u_lock are held at 0, so text particles look ambient even at E',
-    edits: [['gl.uniform1f(u.u_hint, 1 - smoothstep(12, 22, delta));', 'gl.uniform1f(u.u_hint, 0);'],
-      ['gl.uniform1f(u.u_lock, 1 - smoothstep(0.8, 6, delta));', 'gl.uniform1f(u.u_lock, 0);']] },
   { name: 'mirrored', defect: 'the projection mirrors the frame left to right (-f / aspect)',
     edits: [['new Float32Array([f / aspect,', 'new Float32Array([-f / aspect,']] },
   { name: 'turned-180', defect: 'the view matrix turns the frame 180° (its cross product is flipped)',
     edits: [['const r = norm(cross(f, [0, 1, 0]));', 'const r = norm(cross([0, 1, 0], f));']] },
   { name: 'no-phone-widening', defect: 'narrow screens keep the plain 50° field of view, so the text block is cropped at 390×844',
     edits: [['const baseTan = (aspect) => Math.max(Math.tan(BASE_FOV * DEG / 2), FIT_HALF_WIDTH / R / aspect);', 'const baseTan = (aspect) => Math.tan(BASE_FOV * DEG / 2);']] },
-  { name: 'seed-ignored', defect: 'the seed parameter does not reach the cloud generator',
-    edits: [["const rand = makeRandom('cloud:' + seed);", "const rand = makeRandom('cloud:1');"]] },
+  { name: 'seed-ignored', defect: 'the seed parameter is ignored, so every seed builds the default cloud',
+    edits: [["const seed = params.get('seed') || '1';", "const seed = '1';"]] },
   { name: 'drag-sign-flipped', defect: 'horizontal drag turns the camera the wrong way',
     edits: [['cam.az = wrapPi(cam.az - dx * DRAG_RATE);', 'cam.az = wrapPi(cam.az + dx * DRAG_RATE);']] },
   { name: 'wheel-zooms-wrong-way', defect: 'scrolling the wheel up zooms out',

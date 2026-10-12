@@ -118,14 +118,25 @@ function quantile(arr, q) {
 // median to the 99.5th percentile, and keep only the central region (clear of the UI text).
 // With `bandpass` = R, a box blur of radius R is subtracted first, so the smooth sky (gradient
 // and glow) cannot cross the threshold when the particles are dim.
+// With `area` = N, the threshold is instead the one that leaves N pixels of the region above it,
+// so a zoomed view's mask can be held to the stroke area the zoom predicts and cannot fatten.
 // The gap is every pixel of the mask's bounding box at least `gapDist` px (Chebyshev) from it.
-export function strokeMask(lum, W, H, { blur = 3, frac = 0.35, region = [0.08, 0.92, 0.15, 0.85], gapDist = 8, bandpass = 0 } = {}) {
+export function strokeMask(lum, W, H, { blur = 3, frac = 0.35, region = [0.08, 0.92, 0.15, 0.85], gapDist = 8, bandpass = 0, area = 0 } = {}) {
   const sig = boxBlur(lum, W, H, blur);
   if (bandpass) { const low = boxBlur(lum, W, H, bandpass); for (let i = 0; i < sig.length; i++) sig[i] -= low[i]; }
   const med = quantile(sig, 0.5), hi = quantile(sig, 0.995);
-  const thr = med + frac * (hi - med);
-  const mask = new Uint8Array(W * H);
   const [rx0, rx1, ry0, ry1] = [region[0] * W, region[1] * W, region[2] * H, region[3] * H];
+  let thr = med + frac * (hi - med);
+  if (area) {
+    const inside = [];
+    for (let y = 0; y < H; y++) {
+      if (y < ry0 || y > ry1) continue;
+      for (let x = 0; x < W; x++) if (x >= rx0 && x <= rx1) inside.push(sig[y * W + x]);
+    }
+    const s = Float32Array.from(inside).sort();
+    thr = s[Math.max(0, s.length - 1 - Math.min(area, s.length - 1))];
+  }
+  const mask = new Uint8Array(W * H);
   let x0 = W, x1 = -1, y0 = H, y1 = -1, strokes = 0;
   for (let y = 0; y < H; y++) {
     if (y < ry0 || y > ry1) continue;
@@ -183,6 +194,48 @@ export function strokeGapRatio(lum, m) {
   let s = 0, g = 0;
   for (let i = 0; i < lum.length; i++) { if (m.mask[i]) s += lum[i]; else if (m.gap[i]) g += lum[i]; }
   return (s / m.strokes) / (g / m.gaps);
+}
+
+// The light that `img` holds over `base`, a render of the same view without some particles (or
+// the sky alone): per-channel sums of img − base, its luminance sum, its warmth
+// (red − blue) / (red + blue), and its effective area (Σl)² / Σl² over the per-pixel luminance l
+// (clamped at 0). For separate sprites of one shape the effective area is one sprite's area times
+// a factor that depends only on how their brightness is spread, so for the same particles drawn
+// two ways the ratio of effective areas is the ratio of their sprite sizes.
+export function lightOver(img, base) {
+  const a = img.rgb, b = base.rgb;
+  let r = 0, g = 0, bl = 0, L = 0, L2 = 0;
+  for (let o = 0; o < a.length; o += 3) {
+    const dr = a[o] - b[o], dg = a[o + 1] - b[o + 1], db = a[o + 2] - b[o + 2];
+    r += dr; g += dg; bl += db;
+    const l = Math.max(0, 0.2126 * dr + 0.7152 * dg + 0.0722 * db);
+    L += l; L2 += l * l;
+  }
+  return { r, g, b: bl, light: L, warmth: (r - bl) / (r + bl), area: L2 ? (L * L) / L2 : NaN };
+}
+
+// Streak residual of `lum` against `lum0`, a render of the same view without relocation: the rms
+// of the high-passed row and column profiles of lum − lum0 in the central bw×bh box, each over
+// the rms of lum0's own high-passed profile (the cloud's noise). High pass: a ±2 px mean minus the
+// ±30 px moving average of that mean, so only structure finer than about 60 px counts. A row
+// profile averages each row of the box, so it shows horizontal streaks; a column profile shows
+// vertical ones.
+export function streakResidual(lum, lum0, W, H, { bw = 460, bh = 320 } = {}) {
+  const bx = Math.round(W / 2 - bw / 2), by = Math.round(H / 2 - bh / 2);
+  const prof = (L) => {
+    const rows = new Float64Array(bh), cols = new Float64Array(bw);
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) { const v = L((by + y) * W + bx + x); rows[y] += v / bw; cols[x] += v / bh; }
+    return { rows, cols };
+  };
+  const hp = (p) => {
+    const s = Array.from(p, (_, i) => { let a = 0, n = 0; for (let k = -2; k <= 2; k++) if (i + k >= 0 && i + k < p.length) { a += p[i + k]; n++; } return a / n; });
+    const out = [];
+    for (let i = 30; i < s.length - 30; i++) { let a = 0; for (let k = -30; k <= 30; k++) a += s[i + k]; out.push(s[i] - a / 61); }
+    return out;
+  };
+  const rms = (a) => Math.sqrt(a.reduce((x, y) => x + y * y, 0) / a.length);
+  const p = prof((i) => lum[i] - lum0[i]), p0 = prof((i) => lum0[i]);
+  return { row: rms(hp(p.rows)) / rms(hp(p0.rows)), col: rms(hp(p.cols)) / rms(hp(p0.cols)) };
 }
 
 export function iou(a, b) {

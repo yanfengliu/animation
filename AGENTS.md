@@ -80,7 +80,7 @@ Node 24 (`.nvmrc`). Each command below was run on Windows 11 with Node 24.18.1 o
 
 - `npm ci` installs the one dev dependency, Playwright 1.63.0 (pinned). It installs no browser, because neither `playwright` nor `playwright-core` has an install script.
 - `npx playwright install chromium` then puts that version's Chromium (153.0.8010.12) in the local Playwright cache. When the build is already there it reuses it and downloads nothing (2 s here). The gates use only that cache; nothing downloads at test time.
-- `npm test` runs the headless suite, `node --test --test-concurrency=2 tests/*.test.mjs`: 35 tests in about 46 s. Two files at a time, because SwiftShader WebGL2 is CPU-heavy. `PAGE=<path relative to the repo root>` runs it against another copy of the page.
+- `npm test` runs the headless suite, `node --test --test-concurrency=2 tests/*.test.mjs`: 35 tests in about 47 s. Two files at a time, because SwiftShader WebGL2 is CPU-heavy. The illusion file also renders its 1280×800 views in two browsers, four pages at a time, because each browser draws all its pages in one GPU process. `PAGE=<path relative to the repo root>` runs it against another copy of the page.
 - `npm audit --audit-level=high` runs after any dependency change.
 - `npm run shoot -- --preset=all` (or `magic`, `off`, or single views; see the header of `scripts/shoot.mjs`) is the visual instrument. It saves PNGs under `tmp/shots/` and prints each one's sha256 and what the page reports. A visual change still needs someone to look at the shots at native resolution; the gates do not replace that.
 - `node tests/mutate.mjs [name ...]` re-proves the gates.
@@ -95,13 +95,21 @@ Node 24 (`.nvmrc`). Each command below was run on Windows 11 with Node 24.18.1 o
 What the suite proves (each file's header states its exact bound):
 
 - `tests/illusion.test.mjs`:
-  - At E, "hello world" strokes are at least 2× brighter than the gaps between them, at t 0, 7.3 and 31 s, at 1280×800 and 390×844, at fov 32 and 80 (1.8× there), and when canvas readback returns zeros. The stroke shapes are the same for two seeds, so they come from the message, not the particle draw.
+  - At E the "hello world" strokes are at least 1.48× brighter than the gaps between them, at t 0, 7.3 and 31 s, at 1280×800 and 390×844, at fov 32 and 80, and when canvas readback returns zeros.
+    - Relocation must also lift that ratio at least 1.35× over the same view rendered with `beta=0`, because the ratio alone has a baseline: with no relocation it is still 1.52 at 1280×800.
+    - The stroke shapes are the same for two seeds, so they come from the message, not the particle draw.
+    - A zoomed view's mask keeps the stroke area the zoom predicts, so it cannot fatten where sprites merge at fov 80.
   - At E at 1280×800 the strokes form two lines, the top one narrower, with a full-height stem at the left end of the top line ("h") and at the right end of the bottom line ("d"). So the text is neither mirrored nor turned 180°.
   - At 390×844 the whole text block, measured across the full width, stays at least 8 px inside the frame.
-  - At E a text particle carries at least 3× the light of an ambient one and is warmer, so the reveal engages.
+  - Every particle renders alike at every angle (owner directive, 2026-10-11).
+    - At E, 3° from E (el+3), az+25, el−25 and the back, the text particles carry the light (within 10%), colour (warmth within 0.03) and sprite size (within 15%) of the same particles drawn as ambient.
+    - The comparison uses `beta`. The text layer minus the sky holds the relocated particles drawn as text. The full `beta=0` render minus the ambient layer holds the same particles drawn as ambient where they started. Size is measured at `beta=0.02`, where the 121 text sprites are separate.
+    - The whole scene's particle light at E and 3° stays within 15% of its mean at the three far views, so nothing glows brighter as the camera nears E.
   - The text layer at E holds still over time, and zoom only scales the image.
-  - From 25° out (±25° az and el, +60° az) the E strokes are no brighter than the back-view floor + 0.06. The back view is that floor, not a case tested against it.
-  - The text layer is checked for a seed-dependent smear at az+25 only. At az+25, el−25 and the back a text particle carries the light and colour of an ambient one.
+  - From 25° out (±25° az and el, +60° az) the E strokes are no brighter than the back-view floor + 0.06, and that floor stays below 1.25. The back view is the floor, not a case tested against it.
+  - The az+25 text layer is a smear that changes with the seed.
+  - Relocation leaves no streaks at az±25, az+60 or the back. The row and column residual of a render minus its `beta=0` twin (high-passed profiles over the cloud's own profile noise) stays within 1.45× the floor, the mean residual at two diagonal control views in the same run.
+  - Accepted limit, reported each run but not gated as hidden: from el±15–25° the text columns show as vertical streaks (column residual about 1.7–2.2× the floor at el±25). The az+25 bound holds for the default seed: seeds 2 and 3 of the same page measure 1.52 and 1.70 there, against 1.25 for seed 1.
   - The same seed builds the same cloud.
 - `tests/controls.test.mjs`: real mouse, wheel, keyboard and CDP touch input on a 640×400 page. Covers drag signs, rate and the ±70° clamp; zoom that changes only the field of view; arrow keys; the "Find the angle" glide and its cancel; snap near E; zooming during a glide or snap, which takes at once and holds when the move lands; touch drag and pinch, including a pinch at E and a pinch after a deliberate 17 px drag away from E, which must not snap; the tour (moves at load, stops on a press, still stopped 9 s later); coasting; and reduced motion (no tour, no coast once switched on in the same page, "Find the angle" jumps).
 - `tests/page.test.mjs`: no console or page errors; the only request is the Google Fonts stylesheet; if it never answers, the page still draws within 2 s of the time the same load takes with it answered (both timed in the test); no horizontal overflow at 390 px; Tab reaches the canvas and then "Find the angle" with focus styles that change pixels on screen; keys work on the focused canvas; Chromium's accessibility tree exposes the canvas as a focusable application with a role description and a name; the no-WebGL2 message. Each check closes its browser context as soon as it is done.
@@ -116,7 +124,7 @@ What the suite proves (each file's header states its exact bound):
   - Only Playwright code builds `file:` URLs, including from `import.meta.url` outside `fileURLToPath`.
   - Child processes start only Node, in files and in commands such as `node -e`, whether `child_process` is imported whole, by name, renamed or destructured.
 
-Bound: one engine, headless Chromium 153 with SwiftShader WebGL2, device pixel ratio 1 for the image gates, and only the listed views, times, seeds and inputs. The image gates measure luminance and shape, not whether a person can read the text. No screen reader was available, so the accessibility check reads Chromium's tree, not what NVDA or JAWS do with it.
+Bound: one engine, headless Chromium 153 with SwiftShader WebGL2, device pixel ratio 1 for the image gates, and only the listed views, times, seeds, `beta` values and inputs. The image gates measure luminance and shape, not whether a person can read the text. A reveal confined to angles between the measured views (for example only 8–20° from E) would pass them. No screen reader was available, so the accessibility check reads Chromium's tree, not what NVDA or JAWS do with it.
 
 The hygiene scan's blind spots:
 - code assembled at run time: `eval`, strings or names built from pieces, computed keys such as `cp['exec']`, a launch method reached by destructuring;
@@ -131,9 +139,10 @@ It still flags a few harmless forms, listed in its header: a `pause()` on a non-
 ## Invariants & boundaries
 
 - The page stays one self-contained `index.html` that opens straight from disk: no build step, no external scripts, no runtime dependencies. The only external request is the optional Google Fonts stylesheet.
+- Every particle renders the same way at every camera angle: text and ambient particles get the same light, colour, size and focus at E and everywhere else, and nothing in the scene brightens as the camera nears E. The words become obvious only because the particles line up there (owner directive, 2026-10-11: "They need to be glowing consistently no matter what angle. The words should be entirely depending on the right angle to be obvious.").
 - Text particles move only along their own sight-line from the secret eye, so their projection from it never changes. Ambient drift plus wobble is at most about 0.52 world units. Seen from E that is 0.42σ at the text plane and less beyond it (σ is the relocation width in the plan), but up to about 0.9σ for the nearest particles. So the density that hides the text holds closely at and beyond the plane and only roughly in front of it.
 - Zoom changes the field of view only. The eye stays on the orbit sphere with world-up roll, because moving it breaks the illusion.
-- The test contract changes only together with the gates. Query parameters: `az`, `el`, `fov` (degrees), `t` (freezes the particle clock), `tour=0`, `layer=text|ambient`, `seed`. Read-only `window.__cloud`: `ready`, `frame`, `magic`, `view()`, `alignment()`, `mode()`, `counts`. DOM ids: `#scene`, `#find`, `#readout`, `#hint`, `#nogl`. `#scene` is exposed as a focusable `application` with a role description and a name.
+- The test contract changes only together with the gates. Query parameters: `az`, `el`, `fov` (degrees), `t` (freezes the particle clock), `tour=0`, `layer=text|ambient`, `seed`, and the test-only `beta`, a number from 0 to 1 that sets the peak relocation chance (other values keep the default 0.85). The base cloud is the same for every `beta`, and `beta=0` relocates nothing, so a render minus its `beta=0` twin holds only what relocation changed. Read-only `window.__cloud`: `ready`, `frame`, `magic`, `view()`, `alignment()`, `mode()`, `counts`. DOM ids: `#scene`, `#find`, `#readout`, `#hint`, `#nogl`. `#scene` is exposed as a focusable `application` with a role description and a name.
 - The page doubles as a claude.ai artifact: one deliberate dark theme with colour tokens on `:root`, no `#key=value` hash state, and it works at 390 px wide.
 
 ## Conventions

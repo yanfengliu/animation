@@ -5,6 +5,8 @@
 //   A view is comma-separated key=value pairs:
 //     az, el, fov, t                      page query parameters, numbers (t defaults to --t; t=live runs the clock)
 //     seed, layer=text|ambient, tour=0|1  page query parameters (no layer: the full scene; tour defaults to 0)
+//     beta                                page query parameter, a number from 0 to 1: the test-only peak
+//                                         relocation chance (no beta: the page's default; beta=0: no text)
 //     viewport=WxH, dpr=N, reduced=0|1    browser context
 //     wait=MS                             extra wait after the frames (for live clocks)
 //     clip=X:Y:W:H                        CSS-pixel crop of the screenshot
@@ -27,7 +29,7 @@ const MAGIC = { az: 38, el: 14 };
 // Every key a view may use. The page draws one layer for layer=text or layer=ambient and the full
 // scene for any other value, and runs its tour unless tour=0; reduced=1 asks the browser for
 // reduced motion. So those three keys take only the values below.
-const VIEW_KEYS = ['az', 'el', 'fov', 't', 'seed', 'layer', 'tour', 'viewport', 'dpr', 'reduced', 'wait', 'clip', 'name'];
+const VIEW_KEYS = ['az', 'el', 'fov', 't', 'seed', 'beta', 'layer', 'tour', 'viewport', 'dpr', 'reduced', 'wait', 'clip', 'name'];
 const CHOICES = {
   layer: { values: ['text', 'ambient'], help: 'layer=text or layer=ambient, or leave layer out for the full scene' },
   tour: { values: ['0', '1'], help: 'tour=0 (no tour, the default here) or tour=1' },
@@ -65,11 +67,13 @@ function checkView(v) {
     const c = CHOICES[k];
     if (c && !c.values.includes(val)) fail(`view ${JSON.stringify(v)}: ${k}=${val} is not allowed; use ${c.help}`);
   }
-  for (const k of ['az', 'el', 'fov', 't', 'dpr', 'wait']) {
+  for (const k of ['az', 'el', 'fov', 't', 'beta', 'dpr', 'wait']) {
     const val = v[k] ?? (k === 't' || k === 'dpr' ? opts[k] : undefined);
     if (val === undefined || (k === 't' && val === 'live')) continue;
     if (String(val).trim() === '' || !Number.isFinite(Number(val))) fail(`view ${JSON.stringify(v)}: ${k}=${val} is not a finite number`);
   }
+  // The page reads beta only from 0 to 1 and keeps its default for anything else, as it does for a non-number.
+  if (v.beta !== undefined && !(Number(v.beta) >= 0 && Number(v.beta) <= 1)) fail(`view ${JSON.stringify(v)}: beta=${v.beta} is outside 0 to 1; the page would ignore it and use its default`);
   if (v.viewport !== undefined && !/^\d+x\d+$/.test(v.viewport)) fail(`view ${JSON.stringify(v)}: viewport=${v.viewport} is not WxH`);
   if (v.clip !== undefined && v.clip.split(':').map(Number).filter(Number.isFinite).length !== 4) fail(`view ${JSON.stringify(v)}: clip=${v.clip} is not X:Y:W:H`);
 }
@@ -141,7 +145,7 @@ async function shoot(v) {
   const dpr = Number(v.dpr || opts.dpr);
   if (!(vw > 0 && vh > 0 && dpr > 0)) fail(`bad viewport/dpr in view ${JSON.stringify(v)}`);
   const query = new URLSearchParams();
-  for (const k of ['az', 'el', 'fov', 'layer', 'seed']) if (v[k] !== undefined) query.set(k, v[k]);
+  for (const k of ['az', 'el', 'fov', 'layer', 'seed', 'beta']) if (v[k] !== undefined) query.set(k, v[k]);
   const t = v.t ?? opts.t;
   if (t !== 'live') query.set('t', t);
   query.set('tour', v.tour ?? '0');
@@ -179,7 +183,9 @@ async function shoot(v) {
   if (v.az !== undefined && Math.abs(wrap(state.view.az - Number(v.az))) > 0.01) problems.push(`az did not take: asked ${v.az}, page reports ${state.view.az}`);
   if (v.el !== undefined && Math.abs(state.view.el - Number(v.el)) > 0.01) problems.push(`el did not take: asked ${v.el}, page reports ${state.view.el}${Math.abs(Number(v.el)) > 70 ? ' (the page clamps elevation to ±70)' : ''}`);
   if (v.fov !== undefined && Math.abs(state.view.fov - Number(v.fov)) > 0.05) problems.push(`fov did not take: asked ${v.fov}, page reports ${state.view.fov.toFixed(2)} (zoom limits?)`);
-  const name = v.name || ['shot', `${vw}x${vh}@${dpr}`, `az${v.az ?? 'def'}`, `el${v.el ?? 'def'}`, v.fov && `fov${v.fov}`, `t${t}`, v.layer].filter(Boolean).join('_');
+  // The page does not report β; beta=0 must leave no text particles, so a page that ignores beta shows here.
+  if (v.beta !== undefined && Number(v.beta) === 0 && state.counts.text !== 0) problems.push(`beta=0 did not take: the page reports ${state.counts.text} text particles`);
+  const name = v.name || ['shot', `${vw}x${vh}@${dpr}`, `az${v.az ?? 'def'}`, `el${v.el ?? 'def'}`, v.fov && `fov${v.fov}`, `t${t}`, v.beta !== undefined && `beta${v.beta}`, v.layer].filter(Boolean).join('_');
   const file = path.join(outDir, name + '.png');
   let clip;
   if (v.clip) { const [x, y, width, height] = v.clip.split(':').map(Number); clip = { x, y, width, height }; }
