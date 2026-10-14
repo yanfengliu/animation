@@ -30,17 +30,19 @@
 // - nothing pauses a receiver that can be a page: one whose chain names "page" (page.x,
 //   this.page, newPage(), pages()[0]) or uses a name that can hold one. The same file declares
 //   such a name from a statement that calls newPage, pages() or waitForEvent, alone or in a
-//   destructuring pattern, or assigns it, awaited or not, from a bare name that can hold a page or
+//   destructuring pattern, or as the variable of a for…of loop over such a call (for (const tab
+//   of context.pages())), or assigns it, awaited or not, from a bare name that can hold a page or
 //   names "page". A declaration nested inside another (an arrow helper's first statement) or
 //   written without semicolons counts on its own. Pauses on sockets, requests, streams, media and
 //   animations pass;
 // - no shell command (npm script, shell file, settings command) runs an opener where a command
 //   starts: at a line start, after ; & | ( or a backtick, or after a shell's command switch (cmd /c
-//   or /k, sh -c or a combined switch such as -lc, PowerShell -Command). The command word may be
-//   quoted there; a quote anywhere else is text (echo "open tasks: 3"). Windows PowerShell started
-//   there runs its first argument that is not a switch or a switch's value as a command, so after
-//   powershell or powershell.exe and its switches, whose values may be quoted, the next word
-//   counts as a command start too; the word powershell anywhere else is text;
+//   or /k, sh -c or a combined switch such as -lc, PowerShell -Command), also behind cmd's echo-off
+//   @ or the keywords then, do, else and exec there, and after cmd's ") else". The command word
+//   may be quoted there; a quote anywhere else is text (echo "open tasks: 3"). Windows PowerShell
+//   started there runs its first argument that is not a switch or a switch's value as a command,
+//   so after powershell or powershell.exe and its switches, whose values may be quoted, the next
+//   word counts as a command start too; the word powershell anywhere else is text;
 // - a file or command that builds a file: URL (a path-to-URL conversion, a quoted file: string, or
 //   import.meta's url or resolve anywhere but inside fileURLToPath) imports Playwright;
 // - the child-process module, in files and in commands (node -e), is reached only through import
@@ -50,9 +52,10 @@
 // Known false positives: a pause on a receiver that is not a page but whose chain names "page"
 // (pageStream, a call with a page argument), or on a name bound as above that holds no page (a
 // name declared with no semicolon before a later newPage call, or assigned from pageStream); a
-// program's own -c switch before a quoted opener word (git commit -c "start ..."); an opener word
-// as an argument after powershell's -File script; a launch method's name or the child-process
-// module's name inside a string.
+// program's own -c switch before a quoted opener word (git commit -c "start ..."); a separator
+// inside quoted text before an opener word (echo "a; open b", echo "(a) else open b"); an opener
+// word as an argument after powershell's -File script; a launch method's name or the
+// child-process module's name inside a string.
 // Blind spots: code assembled at run time (eval, new Function, strings or names built from pieces,
 // computed keys such as cp['exec'], a launch method reached by destructuring or a computed key); a
 // page under a name without "page" that the file does not bind itself (a parameter called tab) or
@@ -281,18 +284,21 @@ const BANNED = [
 // its chain names "page", or it uses a name that can hold one. A name can hold a page when the
 // same file declares it, alone or inside a destructuring pattern, from a statement that calls
 // newPage, pages() or waitForEvent (const [popup] = await Promise.all([page.waitForEvent('popup'),
-// ...])), or assigns it, awaited or not, from a bare name that can hold a page or names "page"
-// (const popup = await popupPromise).
+// ...])), or binds it as the variable of a for…of loop over such a call, or assigns it, awaited or
+// not, from a bare name that can hold a page or names "page" (const popup = await popupPromise).
 const PAUSE = /\??\.\s*pa[u]se\s*(?:\?\.\s*)?\(/g;
 const PATTERN = String.raw`([\w$]+|\[[^\]=]*\]|\{[^}=]*\})`;
 // The right-hand side is read in a lookahead, so a match ends at its "=" and never swallows a
 // declaration nested after it: in const glide = async () => { const tab = await ctx.newPage(); …
 // both glide and tab are bound, and in code without semicolons every declaration is.
 const PAGE_BINDING = new RegExp(String.raw`\b(?:const|let|var)\s+` + PATTERN + String.raw`\s*=(?=[^;]*?\b(?:newPage|pages|waitForEvent)\s*\()`, 'g');
+// A for…of loop's iterable is read only up to its first ")" or "{", so a page opened in the loop
+// body does not bind the loop variable: for (const tab of context.pages()) await tab.pause().
+const FOR_OF_BINDING = new RegExp(String.raw`\bfor\s*(?:await\s*)?\(\s*(?:const|let|var)\s+` + PATTERN + String.raw`\s+of\b(?=[^;{)]*?\b(?:newPage|pages|waitForEvent)\s*\()`, 'g');
 const ALIAS = new RegExp(String.raw`(?:\b(?:const|let|var)\s+)?` + PATTERN + String.raw`\s*(?<![=!<>])=(?![=>])\s*(?:await\s+)?([\w$]+)\s*(?=[;\n,)\]}]|$)`, 'g');
 function pageNames(text) {
   const names = new Set(), words = (s) => [...s.matchAll(/[\w$]+/g)].map(([w]) => w);
-  for (const m of text.matchAll(PAGE_BINDING)) for (const w of words(m[1])) names.add(w);
+  for (const re of [PAGE_BINDING, FOR_OF_BINDING]) for (const m of text.matchAll(re)) for (const w of words(m[1])) names.add(w);
   for (let grew = true; grew;) {
     grew = false;
     for (const m of text.matchAll(ALIAS)) {
@@ -326,12 +332,14 @@ function receiver(text, end) {
 }
 // In shell commands an opener counts where a command starts: at a line start, after ; & | ( or a
 // backtick, or after a shell's command switch (cmd /c or /k, sh -c or -lc, PowerShell -Command).
+// cmd's echo-off @ (@start, @powershell in a .cmd file) and the keywords then, do, else and exec
+// (if ...; then start ...) may come first there, and cmd's ") else" starts a command too.
 // The command word may be quoted there; anywhere else a quote is just text. Windows PowerShell
 // started there (powershell or powershell.exe) runs its first argument that is not a switch or a
 // switch's value as a command, so that argument counts as a command start too; a switch's value
 // may be quoted (powershell -WindowStyle "Hidden" "ii index.html"). The word powershell elsewhere
 // is text (git commit -m "fix powershell start script").
-const WORD_START = String.raw`(?:^|[;&|(\x60]|\s(?:\/[ck]|-[a-z]*c|-command)\s)\s*['"]?\s*`;
+const WORD_START = String.raw`(?:^|[;&|(\x60]|\)(?=\s*else\s)|\s(?:\/[ck]|-[a-z]*c|-command)\s)\s*(?:(?:then|do|else|exec)\s+)*@?['"]?\s*`;
 const POWERSHELL = String.raw`powershell(?:\.exe)?['"]?(?:\s+-[\w:]+(?:\s+(?:"[^"]*"|'[^']*'|[^\s'"-]\S*))?)*\s+['"]?\s*`;
 const SHELL_OPENER = new RegExp(WORD_START + String.raw`(?:` + POWERSHELL + String.raw`)?(?:start|open|xdg[-]open|explorer|invoke[-]item|ii|start[-]process|saps)(?:\.exe)?['"]?\s+\S`, 'im');
 

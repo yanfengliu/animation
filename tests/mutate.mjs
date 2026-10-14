@@ -44,6 +44,8 @@ const NEAR_SET = nearSet(NEAR);
 const PARTICLE_COLOUR = 'v_col = u_pal[code & 3] * (level * tw * fade * energy);';
 const TEXT_BRIGHTER = [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.25 * text * u_near));'];
 const GOLD_TINT = [PARTICLE_COLOUR, 'v_col = mix(u_pal[code & 3], vec3(1.0, 0.78, 0.46), 0.3 * text * u_near) * (level * tw * fade * energy);'];
+// Review round 5 (R5-1): red and blue down, green up, so luminance and warmth stay where they were.
+const GREEN_TINT = [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * mix(vec3(1.0), vec3(0.739, 1.10, 0.739), text * u_near) * (level * tw * fade * energy);'];
 const BETA_LINE = 'const BETA_DEFAULT = 0.85;';
 const DEFAULT_DRAW = 'else gl.drawArrays(gl.POINTS, 0, N_TOTAL);';
 // `found` turns true when a glide lands, so the reveal shows only after "Find the angle".
@@ -52,6 +54,8 @@ const FOUND = [['let ready = false, frames = 0;', 'let ready = false, frames = 0
 // 1 once the camera has stayed within 1° of E in `mode` for 5 s; the timer restarts on leaving.
 const DWELL_DECL = ['let ready = false, frames = 0;', 'let ready = false, frames = 0, dwellFrom = null;'];
 const dwell = (m) => `(mode === '${m}' && alignDeg() < 1 ? (performance.now() - (dwellFrom ??= performance.now()) > 5000 ? 1 : 0) : (dwellFrom = null, 0))`;
+// 1 once the tour's hold at E (a hold is an anim without a target) has run `ms`.
+const tourHold = (ms) => `(mode === 'tour' && anim && !anim.target && alignDeg() < 1e-3 && performance.now() - anim.t0 > ${ms} ? 1 : 0)`;
 
 const PAGE_MUTANTS = [
   { name: 'reveal-brighter', defect: 'text particles brighten near E, up to 1.25× at E (a reveal)',
@@ -64,10 +68,12 @@ const PAGE_MUTANTS = [
     edits: [NEAR_UNIFORM, nearSet(`found ? ${NEAR} : 0`), TEXT_BRIGHTER, ...FOUND] },
   { name: 'reveal-after-dwell', defect: 'text particles brighten 1.25× once the camera has stayed idle within 1° of E for 5 s (a reveal for a viewer who holds the angle, which shots taken on arrival do not show)',
     edits: [NEAR_UNIFORM, nearSet(dwell('idle')), TEXT_BRIGHTER, DWELL_DECL] },
-  { name: 'reveal-late-in-tour-hold', defect: "text particles brighten 1.25× once the tour has stayed within 1° of E for 5 s (a reveal late in the tour's hold at E)",
-    edits: [NEAR_UNIFORM, nearSet(dwell('tour')), TEXT_BRIGHTER, DWELL_DECL] },
+  { name: 'reveal-late-in-tour-hold', defect: "text particles brighten 1.25× once the tour's hold at E has run 2.5 s of its 5 s (a reveal late in the hold, which a shot as the tour arrives at E does not show; R5-2)",
+    edits: [NEAR_UNIFORM, nearSet(tourHold(2500)), TEXT_BRIGHTER] },
   { name: 'reveal-gold', defect: 'text particles take a gold tint near E, 30% at E (a reveal)',
     edits: [NEAR_UNIFORM, NEAR_SET, GOLD_TINT] },
+  { name: 'reveal-green', defect: 'text particles take a green tint near E in every draw, red and blue × 0.739 and green × 1.10 at E, which leaves their luminance and warmth unchanged (a colour reveal off the warmth axis, R5-1)',
+    edits: [NEAR_UNIFORM, NEAR_SET, GREEN_TINT] },
   { name: 'reveal-gold-shipped', defect: 'text particles take a gold tint near E, 30% at E, in the shipped draw only (no layer set), so the layer=text and layer=ambient draws that the alike checks compare show none (a colour reveal that the light sums do not see)',
     edits: [NEAR_UNIFORM, nearSet(`layer === null ? ${NEAR} : 0`), GOLD_TINT] },
   { name: 'reveal-gold-after-glide', defect: 'once "Find the angle" has glided to E, text particles take a gold tint near E, 30% at E (a colour reveal that views set by URL do not show)',
@@ -237,6 +243,12 @@ const TREE_MUTANTS = [
       j('  await tab.pa', 'use()'),
       '}', '',
     ].join('\n')) },
+  { name: 'cmd-echo-off-powershell-opener', defect: "a .cmd script hands Windows PowerShell a quoted command that opens the page, behind cmd's echo-off @ (R5-4)",
+    apply: (dir) => writeIn(dir, 'scripts/view.cmd', ['@echo off', j('@powershell -NoProfile "i', 'i index.html"'), ''].join('\r\n')) },
+  { name: 'sh-then-opener', defect: 'a shell script opens the page behind the keyword then, on one line with its if (R5-4)',
+    apply: (dir) => writeIn(dir, 'scripts/view.sh', ['#!/bin/sh', j('if [ -f index.html ]; then st', 'art index.html; fi'), ''].join('\n')) },
+  { name: 'for-of-pages-pause', defect: 'a test helper pauses every open page through a for…of loop over pages() under a name without "page" (review round 5, minor 4)',
+    apply: (dir) => writeIn(dir, 'tests/lib/debug.mjs', ['export async function holdAll(context) {', j('  for (const tab of context.pages()) await tab.pa', 'use();'), '}', ''].join('\n')) },
   { name: 'powershell-quoted-switch-opener', defect: 'an npm script hands Windows PowerShell a quoted command that opens the page, after a switch whose value is quoted (R4-4)',
     apply: (dir) => addNpmScript(dir, 'view', j('powershell -WindowStyle "Hidden" "i', 'i index.html"')) },
 ];

@@ -32,18 +32,18 @@
 //   that changes with the seed;
 // - every particle renders alike at every angle (owner directive, 2026-10-11): at E, 3° (el+3),
 //   12° (az−12, 11.6° from E), az+25, el−25 and the back, at t 0 and 7.3, the text particles carry
-//   the light (within 5%) and colour (warmth within 0.03) of the same particles drawn as ambient,
-//   and at t 0 their sprite size (within 15%); the shipped render minus the sky equals the text
-//   layer minus the sky plus the ambient layer minus the sky, pixel by pixel and channel by
-//   channel, capped at 255 as the 8-bit target caps it (residual at most 0.1% of their light in
-//   each channel; exactly 0 measured), so the shipped draw is the one those comparisons measured
-//   and any effect it alone has (light, colour, size or focus) shows; and the scene's particle
-//   light at E, 3° and 12° is within 15% of its mean over the three far views;
+//   the light (within 5%) and colour (red, green and blue each within 3%) of the same particles
+//   drawn as ambient, and at t 0 their sprite size (within 15%); the shipped render minus the sky
+//   equals the text layer minus the sky plus the ambient layer minus the sky, pixel by pixel and
+//   channel by channel, capped at 255 as the 8-bit target caps it (residual at most 0.1% of their
+//   light in each channel; exactly 0 measured), so the shipped draw is the one those comparisons
+//   measured and any effect it alone has (light, colour, size or focus) shows; and the scene's
+//   particle light at E, 3° and 12° is within 15% of its mean over the three far views;
 // - the camera's modes and time spent at E do not change the picture: E reached by "Find the
 //   angle" (a real click and the glide), shot on arrival and again after 8 s idle there, and E held
-//   by the tour, shot 6 s after its first frame late in its hold, render the central region as E
-//   set by URL does, pixel by pixel and channel by channel (residual at most 0.1%; exactly 0
-//   measured);
+//   by the tour started from the shipped start view, shot 12.3 s after its first frame, about 2.9 s
+//   into its 5 s hold at E, render the central region as E set by URL does, pixel by pixel and
+//   channel by channel (residual at most 0.1%; exactly 0 measured);
 // - relocation leaves no streaks at az±25, az+60 and the back: the row and column residual of a
 //   render minus its beta-0 twin stays within 2.1× each seed's floor, the mean residual at two
 //   diagonal control views (seeds 1–3); and at el±25, where the text columns are the accepted cost,
@@ -57,18 +57,22 @@
 // a bound turns red after such a redraw, re-measure seeds 1–3 and the spread over further seeds
 // (tmp-only scripts, as W11 did) and record what moved before touching the threshold.
 // Does not prove: that a person can read the text; views, times or seeds not listed; real GPUs or
-// device pixel ratios above 1 (the exact identities rest on SwiftShader's 8-bit additive blending);
-// how the picture looks while the camera moves (mid-glide, mid-snap, mid-tour, a coast), since
-// every view here is shot with the camera at rest or in the tour's hold; E reached any other way
-// (a snap, the arrow keys); a reveal that waits longer than the dwells measured (8 s idle after the
-// glide, 6 s at E in the tour's first hold); a reveal driven by the particle clock, since every
-// shot freezes it with t, which the shipped page never sets; or a reveal confined to angles
-// between the measured views (for example only 5–10° from E). Nor does it hold β at 0.85 (review
-// round 3, F25; the lesson is in docs/learning/lessons.md). On the az+25 row residual over the
-// cloud's own noise, as a mean over three seeds, β 0.85 measures 1.416, 1.693, 1.556 and 1.524 for
-// seeds 1–3, 4–6, 7–9 and 10–12, and β 1.0 measures 1.637 (seeds 1–3) and 1.897 (seeds 4–6); per
-// seed (1–6) β 1.0 changes it by −0.3% to +37%, +14% on average. So no bound on a three-seed mean
-// tells them apart; a mean over about 12 seeds would, at about four times this file's cost.
+// device pixel ratios above 1 (the exact identities rest on SwiftShader's 8-bit additive blending
+// without dithering: WebGL dithers by default and the page does not turn it off); how the picture
+// looks while the camera moves (mid-glide, mid-snap, mid-tour, a coast), since every view here is
+// shot with the camera at rest or in the tour's hold; E reached any other way (a snap, the arrow
+// keys); a reveal that waits longer than the dwells measured (8 s idle after the glide; in the
+// tour's first hold at E, the 2.9 s up to the shot, at least 1.5 s as checked, so a reveal in the
+// hold's last 2.1 s passes); a reveal driven by the particle clock, since every shot freezes it
+// with t, which the shipped page never sets; a reveal shown only on a URL without t, as a
+// visitor's is, since every view here sets t and every view but the tour's sets az and el too; or
+// a reveal confined to angles between the measured views (for example only 5–10° from E). Nor
+// does it hold β at 0.85 (review round 3, F25; the lesson is in docs/learning/lessons.md). On the
+// az+25 row residual over the cloud's own noise, as a mean over three seeds, β 0.85 measures
+// 1.416, 1.693, 1.556 and 1.524 for seeds 1–3, 4–6, 7–9 and 10–12, and β 1.0 measures 1.637
+// (seeds 1–3) and 1.897 (seeds 4–6); per seed (1–6) β 1.0 changes it by −0.3% to +37%, +14% on
+// average. So no bound on a three-seed mean tells them apart; a mean over about 12 seeds would,
+// at about four times this file's cost.
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startBrowser, newContext, magic, render, waitFrames, state, until, sleep, PAGE_URL } from './lib/harness.mjs';
@@ -88,12 +92,17 @@ const MAX_BACK_FLOOR = 1.19;     // the back-view floor itself, mean: 1.126 real
 const MAX_SMEAR_E_IOU = 0.25;    // az+25 text layer vs the E strokes: 0.12–0.15 real (seeds 1–3), 0.16 flat text (a coarse guard; the seed check tells them apart)
 const MAX_SMEAR_SEED_IOU = 0.3;  // az+25 text layer, seed vs seed: 0.12 real (seeds 1–3), 0.57 flat text
 const LIGHT_BAND = [0.95, 1.05]; // text / as-ambient light of the same particles: 0.994–1.006 real (seeds 1–3, every view, t 0 and 7.3); 1.24 at E with text 1.25× brighter near E, 1.58 with text sprites 1.25× wider, 1.17 with their blur cut 75%, and 1.38–1.41 at every view with text 1.4× brighter everywhere; 1.27–1.34 near E with flat text and 0.92 at az+25 and 1.06 at the back when relocation ignores density compensation, since both move text particles far from where they started
-const MAX_WARMTH_GAP = 0.03;     // |text − as-ambient warmth|: ≤ 0.005 real (seeds 1–3, t 0 and 7.3); 0.126 at E and 0.096 at 3° with a 30% gold tint near E
+const CHANNEL_BAND = [0.97, 1.03]; // text / as-ambient light in each of red, green and blue: 0.993–1.006, 0.993–1.006 and 0.988–1.010 real (seeds 1–3, every view, t 0 and 7.3; 0.989–1.010 over seeds 4–9); 0.731/1.096/0.740 at E and 0.797/1.069/0.803 at 3° with a green tint near E (R5-1, whose light ratio 0.996 and warmth gap −0.006 pass); 1.083/0.967/0.841 at E and 1.062/0.973/0.876 at 3° with a 30% gold tint near E. Within 3% each, the warmth gap stays within about 0.03
 const SIZE_BAND = [0.85, 1.15];  // text / as-ambient effective sprite area at SPARSE_BETA: 0.977–1.009 real (seeds 1–3); 1.49 at E and 1.34 at 3° with text sprites 1.25× wider near E
 const MAX_RESIDUAL = 0.001;      // per channel, Σ|render − prediction| over the predicted light, for the shipped render against text layer + ambient layer − sky, and for each camera-mode shot against E set by URL: exactly 0 real (seeds 1–3, every alike view, t 0 and 7.3, not one channel value off; and every mode shot), where a prediction without the 255 cap would leave up to 0.0043 in blue from clipping alone; worst channel 0.025–0.036 at E and 3° with a 30% gold tint near E in the shipped draw only, 0.041–0.058 with a second text pass at 25% there (seeds 1–3); in the mode shots 0.039 with that tint after a glide, and 0.066 with text 1.25× brighter after a glide, during the tour, after 5 s idle at E or late in the tour's hold
 const SCENE_BAND = [0.85, 1.15]; // scene particle light at E, 3° and 12° over its mean at the far views: 0.95–1.08 real (seeds 1–3, t 0 and 7.3); 1.35 with every particle 1.4× brighter near E
 const DWELL_MS = 8000;           // idle at E after the glide before the second shot; the dwell mutant reveals after 5000
-const TOUR_SHOT_MS = 6000;       // tour shot, from the page's first frame; the tour holds at E from that frame until 1000 + 2200 + 5000 ms later and a little more (index.html: startTour, then TOUR's 'E' and 'hold'). The shot never starts before TOUR_SHOT_MS, but under this file's own load its state reads and screenshot ended up to 1.36 s after it (W12 and W13 runs), so 6 s leaves them 2.2 s, where 6.5 s left 0.34 s at worst; the late-tour mutant reveals after 5000, a second before the shot
+// The tour starts at the shipped start view (no az or el). index.html: startTour holds 1 s, TOUR's
+// 'E' then glides to E in 2.2 s plus 1 s per 10° (61.4° from START: 8.34 s), and 'hold' holds 5 s.
+// Each step starts at the frame where the previous one ended, so the camera is at E from at least
+// 9.34 s to at least 14.34 s after the page's first frame (9.35–9.37 s to 14.39–14.40 s measured).
+const TOUR_SHOT_MS = 12300;      // tour shot, from the page's first frame: 2.96 s into the hold. Run last with the render queue drained, the state reads and screenshot take 0.31–0.39 s, so the shot ends about 1.7 s before the hold does; the late-tour mutant reveals once the hold has run 2.5 s
+const HOLD_LEAD_MS = 1500;       // the shot must start at least this long after the camera reached E, as the page's own frames report it
 const STREAK_K = 2.1;            // mean streak residual over each seed's floor at az±25, az+60, back: ≤ 1.51 real (az+25 row; 1.77–1.91 in threes); 2.31 relocation without density compensation (az+25 row; 2.58 for seeds 4–6)
 const MAX_STREAK_FLOOR = 1.3;    // the floor itself, mean: 0.94 real (0.87–0.91 in threes); 1.95 flat text
 const MAX_EL_STREAK = 1.95;      // mean column residual over the cloud's own noise (not over the floor) at el+25 and at el−25: 1.37 and 1.49 real (≤ 1.65 in threes); 2.06 and 2.30 upright letters, 2.07 and 2.27 with a 5° lean. β 1.0 gives 1.67 and 1.70, inside it
@@ -119,13 +128,14 @@ const SLANT_LEAN = Math.tan((SLANT_DEG * Math.PI) / 180);
 // front. pump() hands each wide view to the next of the four wide contexts in turn, one in each
 // browser, without checking which browser is free, so two can render in one browser at once.
 // Every phone view renders in browser 0 and every blind view in browser 1. SwiftShader draws each
-// browser's pages in one GPU process. The camera-mode test opens its two pages beside the queue,
-// and the seed test renders outside it. Each view is its own page with a frozen clock and a fixed
-// seed, so the images are the same as one at a time in one browser. A view keeps its decoded
-// image; its luminance is computed when first asked for.
+// browser's pages in one GPU process. The seed test renders outside the queue. The camera-mode
+// test, which times its shots, runs last: it pauses pump() and waits for the renders in flight
+// (quiet), so nothing renders beside its two pages. Each view is its own page with a frozen clock
+// and a fixed seed, so the images are the same as one at a time in one browser. A view keeps its
+// decoded image; its luminance is computed when first asked for.
 const BROWSERS = 4, WIDTH = 4;
-let browsers = [], wides = [], wide, phone, blind, E, P, turn = 0, busy = 0;
-const cache = new Map(), queue = [], label = new Map();
+let browsers = [], wides = [], wide, phone, blind, E, P, turn = 0, busy = 0, paused = false;
+const cache = new Map(), queue = [], label = new Map(), drained = [];
 
 function slot(context, query, urgent) {
   const key = `${label.get(context)}?${query}`;
@@ -143,7 +153,7 @@ function slot(context, query, urgent) {
   return v;
 }
 function pump() {
-  while (busy < WIDTH && queue.length) {
+  while (!paused && busy < WIDTH && queue.length) {
     const v = queue.shift();
     v.started = true; busy++;
     const via = v.context === wide ? wides[turn++ % wides.length] : v.context;
@@ -152,7 +162,11 @@ function pump() {
       v.resolve({ ...r, get lum() { return (lum ??= luminance(r.img)); } });
     }, v.reject).finally(() => { busy--; pump(); });
   }
+  if (!busy) for (const done of drained.splice(0)) done();
 }
+// quiet() stops pump() from starting views and resolves once none is rendering; resume() undoes it.
+const quiet = () => { paused = true; return busy ? new Promise((resolve) => drained.push(resolve)) : Promise.resolve(); };
+const resume = () => { paused = false; pump(); };
 const view = (context, query) => { const v = slot(context, query, true); pump(); return v.promise; };
 const warm = (context, queries) => { for (const q of queries) slot(context, q, false); pump(); };
 async function need([context, queries]) {
@@ -212,8 +226,8 @@ before(async () => {
     hidden: [wide, SEEDS.flatMap((s) => [seeded(at(0, 0, '&t=0'), s) + '&layer=text', seeded(back('&t=0'), s), ...OFF().map(([, q]) => seeded(q, s))])],
     smear: [wide, [at(0, 0, '&t=0&layer=text'), at(25, 0, '&t=0&layer=text'), at(25, 0, `&t=0&seed=${OTHER_SEED}&layer=text`)]],
     alike: [wide, ALIKE_TIMES.flatMap((time) => ALIKE().flatMap(([, f]) => alikeViews(f(`&t=${time}`), time === '0')))],
-    modes: [wide, [at(0, 0, '&t=0'), at(0, 0, '&t=0&beta=0&layer=text')]],
     streak: [wide, SEEDS.flatMap((s) => Object.values(STREAK()).flat().flatMap(([, q]) => [seeded(q, s), seeded(q, s) + '&beta=0']))],
+    modes: [wide, [at(0, 0, '&t=0'), at(0, 0, '&t=0&beta=0&layer=text')]],
   };
   for (const entry of Object.values(P)) warm(...entry);
 });
@@ -393,14 +407,15 @@ test('the text layer at +25° az is smeared', async (t) => {
 // ambient without moving the base cloud, and its text layer is the sky alone. So the text layer
 // at `beta` minus the sky holds the particles that `beta` relocates, drawn as text; the full
 // beta-0 render minus the ambient layer at `beta` holds the same particles drawn as ambient where
-// they started. Returns text over as-ambient light, their warmth difference and the ratio of
-// their effective areas (sprite size; meaningful at SPARSE_BETA, where the sprites are separate).
+// they started. Returns text over as-ambient light, the same ratio in each of red, green and blue
+// (so a tint on any colour axis shows, not only warm against cool) and the ratio of their
+// effective areas (sprite size; meaningful at SPARSE_BETA, where the sprites are separate).
 async function drawnBothWays(q, beta) {
   const b = beta === undefined ? '' : `&beta=${beta}`;
   const sky = (await view(wide, q + '&beta=0&layer=text')).img;
   const t = lightOver((await view(wide, q + b + '&layer=text')).img, sky);
   const a = lightOver((await view(wide, q + '&beta=0')).img, (await view(wide, q + b + '&layer=ambient')).img);
-  return { light: t.light / a.light, warmth: t.warmth - a.warmth, size: t.area / a.area };
+  return { light: t.light / a.light, channels: [t.r / a.r, t.g / a.g, t.b / a.b], size: t.area / a.area };
 }
 // The comparisons above read only the test-only draws (layer=text, layer=ambient, beta=0). The
 // shipped draw (no layer) adds both classes in one pass. The page blends ONE/ONE into an 8-bit
@@ -427,89 +442,22 @@ test('every particle renders alike at every angle: no reveal near E', async (t) 
       const q = f(`&t=${time}`);
       const d = await drawnBothWays(q), s = time === '0' ? await drawnBothWays(q, SPARSE_BETA) : null;
       const sh = await shipped(q);
-      here.push({ name: `${name} t=${time}`, near: k < 3, light: d.light, warmth: d.warmth, size: s?.size, identity: sh.identity, scene: sh.full });
+      here.push({ name: `${name} t=${time}`, near: k < 3, light: d.light, channels: d.channels, size: s?.size, identity: sh.identity, scene: sh.full });
     }
     const far = mean(here.filter((r) => !r.near).map((r) => r.scene));
     for (const r of here) rows.push({ ...r, scene: r.scene / far });
   }
-  for (const r of rows) t.diagnostic(`${r.name}: text/as-ambient light ${r.light.toFixed(3)}, warmth difference ${r.warmth.toFixed(3)}${r.size === undefined ? '' : `, sprite size ratio (beta ${SPARSE_BETA}) ${r.size.toFixed(3)}`}, shipped − (text + ambient − sky) residual r/g/b ${rgb(r.identity.abs)} (signed ${rgb(r.identity.signed)}, ${(100 * r.identity.off).toFixed(3)}% of pixels off by more than 2 levels), scene light / far mean ${r.scene.toFixed(3)}`);
+  for (const r of rows) t.diagnostic(`${r.name}: text/as-ambient light ${r.light.toFixed(3)}, r/g/b ${rgb(r.channels)}${r.size === undefined ? '' : `, sprite size ratio (beta ${SPARSE_BETA}) ${r.size.toFixed(3)}`}, shipped − (text + ambient − sky) residual r/g/b ${rgb(r.identity.abs)} (signed ${rgb(r.identity.signed)}, ${(100 * r.identity.off).toFixed(3)}% of pixels off by more than 2 levels), scene light / far mean ${r.scene.toFixed(3)}`);
   // Every broken bound is named in one message, so a failure shows each way the particles differ.
   const broken = [];
   for (const r of rows) {
     if (!(r.light >= LIGHT_BAND[0] && r.light <= LIGHT_BAND[1])) broken.push(`${r.name}: the text particles carry ${r.light.toFixed(3)}× the light of the same particles drawn as ambient (must be within ${LIGHT_BAND.join('–')})`);
-    if (!(Math.abs(r.warmth) <= MAX_WARMTH_GAP)) broken.push(`${r.name}: their light is warmer than the same particles drawn as ambient by ${r.warmth.toFixed(3)} (red−blue over red+blue; must be within ±${MAX_WARMTH_GAP})`);
+    if (!r.channels.every((x) => x >= CHANNEL_BAND[0] && x <= CHANNEL_BAND[1])) broken.push(`${r.name}: in red/green/blue the text particles carry ${rgb(r.channels)}× the light of the same particles drawn as ambient, so their colour differs (each must be within ${CHANNEL_BAND.join('–')})`);
     if (r.size !== undefined && !(r.size >= SIZE_BAND[0] && r.size <= SIZE_BAND[1])) broken.push(`${r.name}: their sprites cover ${r.size.toFixed(3)}× the effective area of the same particles drawn as ambient at beta ${SPARSE_BETA} (must be within ${SIZE_BAND.join('–')})`);
     if (!r.identity.abs.every((x) => x <= MAX_RESIDUAL)) broken.push(`${r.name}: the shipped render differs from the text layer plus the ambient layer (over the sky, capped at 255) by ${rgb(r.identity.abs)} of their light in red/green/blue (signed ${rgb(r.identity.signed)}; ${(100 * r.identity.off).toFixed(3)}% of pixels off by more than 2 levels); each must be at most ${MAX_RESIDUAL}, so the shipped draw renders the particles differently from the draws compared here`);
     if (r.near && !(r.scene >= SCENE_BAND[0] && r.scene <= SCENE_BAND[1])) broken.push(`${r.name}: the scene's particle light is ${r.scene.toFixed(3)}× its mean at az+25, el−25 and the back (must be within ${SCENE_BAND.join('–')})`);
   }
   assertNone(broken, 'every particle must render alike at every angle, but ');
-});
-
-// Every other view is set by URL with the camera at rest and shot within about a second of the
-// page's first frame. The camera's modes, and time spent at E, must not change the picture either.
-// - The glide starts at az+40, el−10 from a real click on "Find the angle" and ends idle at E. It
-//   is shot on arrival, and again after DWELL_MS more idle there.
-// - The tour starts at E (no tour=0). It holds 1 s, eases from E to E for 2.2 s and holds 5 s
-//   (index.html: startTour, then TOUR's 'E' and 'hold'), so it stays at E from its first frame
-//   until 8.2 s later, plus up to a frame at each of those steps. An init script on that page
-//   records when its first animation frame runs, passing every frame request through unchanged,
-//   and the tour is shot TOUR_SHOT_MS after that frame, late in the hold.
-// Each shot is compared with E set by URL (t 0, the clock frozen), and the dwell shot also with
-// the arrival shot, pixel by pixel and channel by channel over the central region, clear of the
-// bar and the hint.
-test('E reached by "Find the angle", then idle there, or held by the tour renders as E set by URL, pixel for pixel', async (t) => {
-  await need(P.modes);
-  const sky = (await view(wide, at(0, 0, '&t=0&beta=0&layer=text'))).img;
-  const byUrl = (await view(wide, at(0, 0, '&t=0'))).img;
-  const shoot = async (page) => decodePng(await page.screenshot({ animations: 'disabled' }));
-  const glide = async () => {
-    const page = await wides[1].newPage();
-    try {
-      await page.goto(PAGE_URL + '?' + at(40, -10, '&t=0'));
-      await waitFrames(page);
-      await page.click('#find');
-      await until(page, () => window.__cloud.mode() === 'idle' && window.__cloud.alignment() < 1e-6, null, 10000, 'the glide coming to rest at E');
-      const landed = await page.evaluate(() => performance.now());
-      await page.mouse.move(640, 400);                // off the button, so it shows no hover style
-      const arrived = { img: await shoot(page), s: await state(page) };
-      await sleep(DWELL_MS);
-      const s0 = await state(page), idle = (await page.evaluate(() => performance.now())) - landed;
-      const img = await shoot(page);
-      return { arrived, dwell: { img, s0, s: await state(page), idle } };
-    } finally { await page.close(); }
-  };
-  const tour = async () => {
-    const page = await wides[2].newPage();
-    try {
-      await page.addInitScript(() => {
-        const raf = window.requestAnimationFrame.bind(window);
-        window.requestAnimationFrame = (cb) => raf((ts) => { window.__firstFrame ??= performance.now(); cb(ts); });
-      });
-      await page.goto(`${PAGE_URL}?az=${E.az}&el=${E.el}&t=0`);
-      await waitFrames(page, 1);
-      const since = () => page.evaluate(() => performance.now() - window.__firstFrame);
-      await sleep(Math.max(0, TOUR_SHOT_MS - (await since())));
-      const s0 = await state(page), from = await since();
-      const img = await shoot(page);
-      return { img, s0, s: await state(page), from, to: await since() };
-    } finally { await page.close(); }
-  };
-  const [g, h] = await Promise.all([glide(), tour()]);
-  const idle = `${(g.dwell.idle / 1000).toFixed(1)} s idle`, span = `${(h.from / 1000).toFixed(2)}–${(h.to / 1000).toFixed(2)} s after its first frame`;
-  const rows = [
-    ['the glide on arrival', g.arrived.img, byUrl, 'E set by URL'],
-    [`the glide after ${idle} at E`, g.dwell.img, byUrl, 'E set by URL'],
-    [`the glide after ${idle} at E`, g.dwell.img, g.arrived.img, 'the same page on arrival'],
-    [`the tour ${span}`, h.img, byUrl, 'E set by URL'],
-  ].map(([name, img, ref, against]) => ({ name, against, d: partsResidual(img, sky, [ref], { region: CENTRE }) }));
-  const show = (s) => `${s.mode}, ${s.align.toFixed(6)}° from E`;
-  t.diagnostic(`glide: on arrival ${show(g.arrived.s)}; after ${idle} ${show(g.dwell.s0)} → ${show(g.dwell.s)}. Tour: shot ${span}, ${show(h.s0)} → ${show(h.s)}`);
-  for (const r of rows) t.diagnostic(`${r.name} against ${r.against}: central residual r/g/b ${rgb(r.d.abs)} (signed ${rgb(r.d.signed)}; ${(100 * r.d.off).toFixed(3)}% of pixels off by more than 2 levels)`);
-  const held = (s, mode) => s.mode === mode && s.align < 1e-6;
-  assert.ok(held(g.dwell.s0, 'idle') && held(g.dwell.s, 'idle'), `the glide did not stay idle at E through the dwell shot: before ${JSON.stringify(g.dwell.s0)}, after ${JSON.stringify(g.dwell.s)}`);
-  assert.ok(held(h.s0, 'tour') && held(h.s, 'tour'), `the tour was not in its hold at E when shot ${span} (it holds at E until about 8.2 s after its first frame): before ${JSON.stringify(h.s0)}, after ${JSON.stringify(h.s)}`);
-  const broken = rows.filter((r) => !r.d.abs.every((x) => x <= MAX_RESIDUAL)).map((r) => `${r.name}: the central region differs from ${r.against} by ${rgb(r.d.abs)} of its light in red/green/blue (signed ${rgb(r.d.signed)}; ${(100 * r.d.off).toFixed(3)}% of pixels off by more than 2 levels); each must be at most ${MAX_RESIDUAL}`);
-  assertNone(broken, 'the camera mode and the time spent at E must not change how E renders, but ');
 });
 
 // The residual compares each render with its beta-0 twin (the same cloud, nothing relocated); a
@@ -551,4 +499,97 @@ test('the same seed builds the same cloud; another seed a different one', async 
   assert.deepEqual(b.counts, a.counts, 'seed 7 loaded twice gave different particle counts');
   assert.ok(Buffer.compare(Buffer.from(a.img.rgb), Buffer.from(b.img.rgb)) === 0, 'seed 7 loaded twice gave different text-layer images');
   assert.ok(meanDiff > 0.5, `seeds 7 and 8 gave nearly the same text-layer image (mean absolute difference ${meanDiff.toFixed(3)} per channel, need above 0.5)`);
+});
+
+// Every other view is set by URL with the camera at rest and shot within about a second of the
+// page's first frame. The camera's modes, and time spent at E, must not change the picture either.
+// This test times its shots, so it runs last and first lets the render queue drain (quiet): no
+// queued view renders beside its two pages, the glide in browser 1 and the tour in browser 2.
+// - The glide starts at az+40, el−10 from a real click on "Find the angle" and ends idle at E. It
+//   is shot on arrival, and again after DWELL_MS more idle there.
+// - The tour starts at the shipped start view, as a visitor's does (no az, el or tour=0; t=0
+//   freezes the clock), and holds at E from about 9.3 s to 14.3 s after its first frame (see
+//   TOUR_SHOT_MS). An init script on that page records when its first animation frame runs and
+//   when a frame first ends with the page reporting the tour at E, passing every frame request
+//   through unchanged. The tour is shot TOUR_SHOT_MS after the first frame. The shot counts only
+//   when it started at or after that time (so a wait that did not happen fails), at least
+//   HOLD_LEAD_MS after the camera reached E, and with the tour at E before and after it. If that
+//   timing misses, as on a slow machine, the tour is shot once more on a fresh page, and a second
+//   miss fails the test.
+// Each shot is compared with E set by URL (t 0, the clock frozen), and the dwell shot also with
+// the arrival shot, pixel by pixel and channel by channel over the central region, clear of the
+// bar and the hint.
+test('E reached by "Find the angle", then idle there, or held by the tour renders as E set by URL, pixel for pixel', async (t) => {
+  await need(P.modes);
+  await quiet();
+  try {
+    const sky = (await view(wide, at(0, 0, '&t=0&beta=0&layer=text'))).img;
+    const byUrl = (await view(wide, at(0, 0, '&t=0'))).img;
+    const shoot = async (page) => decodePng(await page.screenshot({ animations: 'disabled' }));
+    const glide = async () => {
+      const page = await wides[1].newPage();
+      try {
+        await page.goto(PAGE_URL + '?' + at(40, -10, '&t=0'));
+        await waitFrames(page);
+        await page.click('#find');
+        await until(page, () => window.__cloud.mode() === 'idle' && window.__cloud.alignment() < 1e-6, null, 10000, 'the glide coming to rest at E');
+        const landed = await page.evaluate(() => performance.now());
+        await page.mouse.move(640, 400);                // off the button, so it shows no hover style
+        const arrived = { img: await shoot(page), s: await state(page) };
+        await sleep(DWELL_MS);
+        const s0 = await state(page), idle = (await page.evaluate(() => performance.now())) - landed;
+        const img = await shoot(page);
+        return { arrived, dwell: { img, s0, s: await state(page), idle } };
+      } finally { await page.close(); }
+    };
+    const tour = async () => {
+      const page = await wides[2].newPage();
+      try {
+        await page.addInitScript(() => {
+          const raf = window.requestAnimationFrame.bind(window);
+          window.requestAnimationFrame = (cb) => raf((ts) => {
+            window.__firstFrame ??= performance.now();
+            cb(ts);
+            const c = window.__cloud;
+            if (window.__atE === undefined && c && c.mode() === 'tour' && c.alignment() < 1e-6) window.__atE = performance.now() - window.__firstFrame;
+          });
+        });
+        await page.goto(`${PAGE_URL}?t=0`);
+        await waitFrames(page, 1);
+        const since = () => page.evaluate(() => performance.now() - window.__firstFrame);
+        for (let left; (left = TOUR_SHOT_MS - (await since())) > 0;) await sleep(left);
+        const s0 = await state(page), from = await since();
+        const img = await shoot(page);
+        const s = await state(page), to = await since();
+        return { img, s0, s, from, to, atE: await page.evaluate(() => window.__atE ?? null) };
+      } finally { await page.close(); }
+    };
+    const held = (s, mode) => s.mode === mode && s.align < 1e-6;
+    const ms = (x) => (typeof x === 'number' ? `${x.toFixed(0)} ms` : String(x));
+    const missed = (h) => [
+      !(h.from >= TOUR_SHOT_MS) && `it started ${ms(h.from)} after the first frame, not at or after ${TOUR_SHOT_MS} ms`,
+      h.atE === null ? 'no frame before it ended with the page reporting the tour at E' : !(h.from - h.atE >= HOLD_LEAD_MS) && `it started ${ms(h.from - h.atE)} after the camera reached E (at ${ms(h.atE)}), where at least ${HOLD_LEAD_MS} ms is needed`,
+      !(held(h.s0, 'tour') && held(h.s, 'tour')) && `the tour was not in its hold at E before and after it: before ${JSON.stringify(h.s0)}, after ${JSON.stringify(h.s)}`,
+    ].filter(Boolean);
+    const [g, first] = await Promise.all([glide(), tour()]);
+    let h = first;
+    if (missed(first).length) {
+      t.diagnostic(`the first tour shot missed (${missed(first).join('; ')}); shooting the tour once more on a fresh page`);
+      h = await tour();
+    }
+    const idle = `${(g.dwell.idle / 1000).toFixed(1)} s idle`, span = `${(h.from / 1000).toFixed(2)}–${(h.to / 1000).toFixed(2)} s after its first frame`;
+    const rows = [
+      ['the glide on arrival', g.arrived.img, byUrl, 'E set by URL'],
+      [`the glide after ${idle} at E`, g.dwell.img, byUrl, 'E set by URL'],
+      [`the glide after ${idle} at E`, g.dwell.img, g.arrived.img, 'the same page on arrival'],
+      [`the tour ${span}`, h.img, byUrl, 'E set by URL'],
+    ].map(([name, img, ref, against]) => ({ name, against, d: partsResidual(img, sky, [ref], { region: CENTRE }) }));
+    const show = (s) => `${s.mode}, ${s.align.toFixed(6)}° from E`;
+    t.diagnostic(`glide: on arrival ${show(g.arrived.s)}; after ${idle} ${show(g.dwell.s0)} → ${show(g.dwell.s)}. Tour (attempt ${h === first ? 1 : 2}): ${h.atE === null ? 'never reported at E' : `at E from ${ms(h.atE)}`}; shot ${span}${h.atE === null ? '' : `, ${ms(h.from - h.atE)} into the hold and ${ms(h.atE + 5000 - h.to)} before its 5 s end`}, reads and screenshot ${ms(h.to - h.from)}; ${show(h.s0)} → ${show(h.s)}`);
+    for (const r of rows) t.diagnostic(`${r.name} against ${r.against}: central residual r/g/b ${rgb(r.d.abs)} (signed ${rgb(r.d.signed)}; ${(100 * r.d.off).toFixed(3)}% of pixels off by more than 2 levels)`);
+    assert.ok(held(g.dwell.s0, 'idle') && held(g.dwell.s, 'idle'), `the glide did not stay idle at E through the dwell shot: before ${JSON.stringify(g.dwell.s0)}, after ${JSON.stringify(g.dwell.s)}`);
+    assertNone(missed(h), `the tour was not shot late in its hold at E on either attempt (the camera holds at E from about 9.3 s to 14.3 s after the first frame); on the last one `);
+    const broken = rows.filter((r) => !r.d.abs.every((x) => x <= MAX_RESIDUAL)).map((r) => `${r.name}: the central region differs from ${r.against} by ${rgb(r.d.abs)} of its light in red/green/blue (signed ${rgb(r.d.signed)}; ${(100 * r.d.off).toFixed(3)}% of pixels off by more than 2 levels); each must be at most ${MAX_RESIDUAL}`);
+    assertNone(broken, 'the camera mode and the time spent at E must not change how E renders, but ');
+  } finally { resume(); }
 });
