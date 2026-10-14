@@ -170,6 +170,11 @@ The hygiene scan's blind spots:
 - programs that open a browser by default but are not named in the scan;
 - files of other types, and repo files outside the scanned folders that only code names, such as a path passed to a Node child process;
 - files outside the scanned paths that no command names: `docs/`, `tmp/`, `node_modules` and its install scripts, git hooks, `~/.claude`, settings files `.gitignore` names, and agents' scratch scripts outside the repo;
+- command starts the scan does not know (review round 6, F47):
+  - a one-line PowerShell script block such as `if (Test-Path index.html) { ii index.html }` or `| ForEach-Object { ii $_ }`;
+  - cmd's `for %%f in (index.html) do start %%f` and `if exist index.html start index.html`;
+  - wrapper commands such as `call start …`, `nohup open …` and `cross-env start …`;
+  - a `for…of` loop over a variable that already holds the pages, such as `for (const tab of tabs)` after `tabs = context.pages()`;
 - the desktop app's own browser pane, which opened the file in the original incident.
 
 It still flags a few harmless forms, listed in its header: a `pause()` on a non-page receiver whose chain names "page" or on a bound name that holds no page, a program's own `-c` switch before a quoted opener word, a separator inside quoted text before an opener word (`echo "a; open b"`, `echo "(a) else open b"`), an opener word passed as an argument after `powershell -File` and its script, and a launch method's or `child_process`'s name inside a string.
