@@ -253,6 +253,34 @@ export function lightOver(img, base, region = [0, 1, 0, 1]) {
   return { r, g, b: bl, light: L, warmth: (r - bl) / (r + bl), area: L2 ? (L * L) / L2 : NaN };
 }
 
+// How far `img` is, pixel by pixel and channel by channel, from what its parts predict: renders
+// of the same view over the same `base` (the sky alone), each holding part of img's light. The
+// prediction is Σ parts − (n − 1)·base, capped at 255 as the 8-bit target caps it (unless `clip`
+// is false); with one part it is that render itself. Per channel (r, g, b) it returns the absolute
+// residual Σ|img − prediction| and the signed residual Σ(img − prediction), each over the
+// predicted light Σ(prediction − base), and the share of pixels off by more than `tol` levels in
+// some channel. With `region` ([x0, x1, y0, y1] as fractions) only the pixels inside it count.
+export function partsResidual(img, base, parts, { region = [0, 1, 0, 1], tol = 2, clip = true } = {}) {
+  const W = img.width, H = img.height, n = parts.length, a = img.rgb, b = base.rgb, ps = parts.map((p) => p.rgb);
+  for (const p of [base, ...parts]) if (p.width !== W || p.height !== H) throw new Error(`partsResidual: images differ in size (${p.width}×${p.height} against ${W}×${H})`);
+  const [x0, x1, y0, y1] = [Math.round(region[0] * W), Math.round(region[1] * W), Math.round(region[2] * H), Math.round(region[3] * H)];
+  const abs = [0, 0, 0], signed = [0, 0, 0], light = [0, 0, 0];
+  let off = 0, pixels = 0;
+  for (let y = y0; y < y1; y++) for (let o = (y * W + x0) * 3, end = (y * W + x1) * 3; o < end; o += 3) {
+    let bad = false;
+    for (let c = 0; c < 3; c++) {
+      let e = -(n - 1) * b[o + c];
+      for (const p of ps) e += p[o + c];
+      if (clip && e > 255) e = 255;
+      const d = a[o + c] - e;
+      abs[c] += Math.abs(d); signed[c] += d; light[c] += e - b[o + c];
+      if (d > tol || d < -tol) bad = true;
+    }
+    off += bad; pixels++;
+  }
+  return { abs: abs.map((x, c) => x / light[c]), signed: signed.map((x, c) => x / light[c]), off: off / pixels, light };
+}
+
 // Streak residual of `lum` against `lum0`, a render of the same view without relocation: the rms
 // of the high-passed row and column profiles of lum − lum0 in the central bw×bh box, each over
 // the rms of lum0's own high-passed profile (the cloud's noise). High pass: a ±2 px mean minus the

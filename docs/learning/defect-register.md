@@ -19,12 +19,16 @@ Defects the owner reported, each with the symptom as they saw it, what the inves
   - a Playwright launch is not literally `headless: true`, or spreads, builds or picks a channel for its options;
   - anything names a system browser, a desktop opener, an opener package or live-reload server (`open-cli`, `live-server`, `lite-server`, `browser-sync`, `npx open`, `http-server -o`), `connectOverCDP`, or a headed, debug, UI, inspector, code-generator, open or report mode, including `npx playwright@<version> open` and the `--debug`, `--ui` and `--open` flags anywhere in a command;
   - anything calls `pause()` on a receiver that can be a page (its chain names "page", or the file binds it, directly, by destructuring or through another such name, from `newPage`, `pages()` or `waitForEvent`);
-  - a Playwright config picks a channel, or a shell command runs an opener where a command starts (a line start, a separator, or after `cmd /c`, `sh -c`, `-Command`, or `powershell` and its switches, quoted or not);
+  - a Playwright config picks a channel, or a shell command runs an opener where a command starts (a line start, a separator, or after `cmd /c`, `sh -c`, `-Command`, or a `powershell` that itself starts a command and its switches, whose values may be quoted);
   - a file without Playwright builds a `file:` URL, from `pathToFileURL`, a quoted `file:` string, or `import.meta.url` outside `fileURLToPath`;
   - a child process, in a file or in a command such as `node -e`, starts anything but Node, however `child_process` is imported (whole, by name, renamed or destructured), or the module is reached in a form the scan cannot read.
 - Review round 1 (R1-6, F14) found that the first version missed openers named after `npx`, renamed imports, `new URL(…, import.meta.url)`, root configs and settings hooks, and flagged `process.stdin.pause()`, any `channel:` key and any `launch*` name. The scan now handles each of those.
 - Review round 2 (R2-2 and R2-4, F20 and F22) found that it still missed `child_process` in commands, the script files that hooks run, and `npx playwright@<version> open`. It also flagged comments, quoted text in commands (`echo "open tasks: 3"`) and ordinary `socket.pause()` or `req.pause()` calls. The scan now handles each of those; the harmless forms it still flags are listed in its header.
 - Review round 3 (R3-6, F28) found that round 2's narrowing let two forms through: a quoted command handed to Windows PowerShell with no `-Command` before it (`powershell "start index.html"`, `powershell -NoProfile "ii index.html"`), and a pause on a popup page held under a name without "page" (`const popup = await popupPromise`, or `const [popup] = await Promise.all([page.waitForEvent('popup'), …])`). The scan now counts the word after `powershell` and its switches as a command start, and follows destructured names and names assigned from a name that can hold a page.
+- Review round 4 (R4-2 and R4-4, F31 and F33) found that round 3's repair had three gaps.
+  - Its page-binding pattern read each declaration to the next semicolon, so it swallowed a declaration nested after it. A page opened in an arrow helper's first statement (`const glide = async () => { const tab = await context.newPage(); await tab.pause(); };`), or in code without semicolons, passed. The helper written across lines and the code without semicolons had been flagged after round 2, so those were regressions; the helper written on one line never had been. The pattern now reads the right-hand side in a lookahead, so every declaration counts on its own.
+  - `powershell -WindowStyle "Hidden" "ii index.html"` passed, because a switch's value could not be quoted. Now it can.
+  - The word `powershell` anywhere in a command made the next word a command start, so `git commit -m "fix powershell start script"` and `echo "use powershell open dialogs"` were flagged. Now `powershell` counts only where a command starts.
 - Each of its four tests goes red with the defect reintroduced by `tests/mutate.mjs`, which counts a mutant only when an assertion fails and first checks that the real tree passes. The tree mutants:
   - `headless-false`: the screenshot tool launching a visible browser.
   - `launch-spread`: a launch that spreads options after `headless: true`.
@@ -43,9 +47,13 @@ Defects the owner reported, each with the symptom as they saw it, what the inves
   - `powershell-switch-opener`: the same after `-NoProfile`.
   - `popup-pause`: a helper that pauses a popup it awaited from a stored `waitForEvent` promise.
   - `destructured-popup-pause`: a helper that pauses a popup it destructured from a `Promise.all` over `waitForEvent` and a click.
+  - `arrow-helper-pause`: an arrow-function helper that opens a page under a name without "page" in its first statement and pauses it.
+  - `semicolon-free-pause`: the same in a helper written without semicolons.
+  - `powershell-quoted-switch-opener`: an npm script that hands Windows PowerShell a quoted command opening the page, after `-WindowStyle "Hidden"`.
 - What the scan cannot see:
   - code assembled at run time (`eval`, strings or names built from pieces, computed keys such as `cp['exec']`, a launch method reached by destructuring);
   - a page under a name without "page" that the file does not bind itself, such as a parameter called `tab`, or reaches only through a member or a call;
+  - Windows PowerShell started as another program's argument rather than where a command starts, such as `cross-env powershell "ii index.html"`, unless `-Command` comes before the command;
   - programs that open a browser by default but are not named in the scan;
   - files of other types, such as a `.py` script, and repo files outside the scanned folders that only code names, such as a path passed to a Node child process;
   - files outside its paths that no command names: `docs/`, `tmp/`, `node_modules` and its install scripts, git hooks, `~/.claude`, settings files `.gitignore` names, and agents' scratch scripts outside the repo.
@@ -73,9 +81,11 @@ Defects the owner reported, each with the symptom as they saw it, what the inves
 - `tests/illusion.test.mjs`, "every particle renders alike at every angle: no reveal near E", compares each text particle with itself drawn as an ambient particle. It uses the test-only `beta` parameter: `beta=0` makes every particle ambient without moving the base cloud. The numbers below are for the slanted letters, seeds 1–3.
   - At E, 3° from E (el+3), 12° from E (az−12), az+25, el−25 and the back, at t 0 and 7.3, the text particles' light must be within 5% of the same particles drawn as ambient (0.994–1.006 measured) and their warmth within 0.03 (0.005 at most). At t 0 their sprite size must be within 15% at `beta=0.02`, where the sprites are separate (0.98–1.01).
   - The whole scene's particle light at E, 3° and 12° must be within 15% of its mean at the far views (0.95–1.08 measured), so the cloud as a whole cannot glow up near E either.
-- Review round 3 (R3-1, F23) found that those comparisons read only the test-only draws (`layer=text`, `layer=ambient`, `beta=0`), so a reveal in the shipped draw alone passed them. Now, at each of those views and times:
-  - the shipped render's particle light over the sky must equal the text layer's plus the ambient layer's within 1% (0.9993–0.9999 measured; additive blending makes them equal apart from 8-bit saturation);
-  - and a second test, "E reached by "Find the angle" or held by the tour renders as E set by URL", requires E reached by a real click on "Find the angle" (the glide, then idle) and E held by the tour (in its 5 s hold) to match E set by URL within 1% (1.000 measured).
+- Review round 3 (R3-1, F23) found that those comparisons read only the test-only draws (`layer=text`, `layer=ambient`, `beta=0`), so a reveal in the shipped draw alone passed them. W11 tied the shipped render's particle light to the text layer's plus the ambient layer's within 1%, and E reached by the glide or held by the tour to E set by URL within 1%, each as one luminance sum.
+- Review round 4 (R4-1, F30) found that a sum of light lets a colour reveal through. A 30% gold tint near E in the shipped draw only measured 0.9955–0.9968 against the 1% band. Rounds 1–4 had each found one more property (light, colour, camera mode, dwell) that a reveal could vary past checks that measure one property at a time. So the ties are now exact, which closes the class:
+  - At each of those views and times, the shipped render minus the sky must equal the text layer minus the sky plus the ambient layer minus the sky, pixel by pixel and channel by channel, capped at 255 as the 8-bit target caps it. The residual may be at most 0.1% of their light per channel; it measures exactly 0 for seeds 1–3. Any effect the shipped draw alone has, in light, colour, size or focus, breaks it: the gold tint gives 2.5–3.6% at E and 3°.
+  - "E reached by "Find the angle", then idle there, or held by the tour renders as E set by URL, pixel for pixel" requires each shot to match E set by URL in the central region, pixel by pixel and per channel, within the same 0.1% (exactly 0 measured).
+- Review round 4 (R4-3, F32) found that every picture of E was taken within about a second of arriving there, so a reveal that waits at E passed. The glide is now shot again after 8 s idle at E and must match both its arrival shot and E set by URL. The tour is shot 6 s after the page's first frame, late in its hold at E, which lasts until about 8.2 s.
 - The legibility checks also require relocation to lift the stroke/gap ratio at least 1.35× over the same view at `beta=0` (1.48–1.61 measured), so the words must come from positions.
 - Mutants in `tests/mutate.mjs` put a reveal back, and each must be killed:
   - `reveal-brighter`: text 1.25× brighter at E, fading out by 12°.
@@ -84,12 +94,20 @@ Defects the owner reported, each with the symptom as they saw it, what the inves
   - `reveal-sharper`: text defocus blur cut by 75% at E.
   - `text-always-brighter`: text 1.4× brighter at every angle.
   - `scene-glows-at-angle`: every particle 1.4× brighter at E.
-  - `reveal-extra-text-pass`: the shipped draw alone adds a second pass of the text particles near E, at 25% of their light at E. It gives 1.053–1.056 at E against the 1% bound.
+  - `reveal-extra-text-pass`: the shipped draw alone adds a second pass of the text particles near E, at 25% of their light at E. It gives 4.1–5.8% at E and 3° against the 0.1% bound.
+  - `reveal-gold-shipped`: the 30% gold tint near E in the shipped draw only.
   - `reveal-on-tour`: text 1.25× brighter near E only while the tour runs.
   - `reveal-after-glide`: text 1.25× brighter near E once "Find the angle" has glided there.
+  - `reveal-gold-after-glide`: the 30% gold tint near E once "Find the angle" has glided there.
+  - `reveal-after-dwell`: text 1.25× brighter once the camera has stayed idle within 1° of E for 5 s.
+  - `reveal-late-in-tour-hold`: text 1.25× brighter once the tour has stayed within 1° of E for 5 s.
   - `weak-relocation`: β back at 0.2, now without the reveal, so the words must fail to read.
 - The `text-always-lit` and `reveal-off` mutants tested the old design and are retired.
 - What the checks cannot see:
   - a reveal confined to angles between the measured views, for example only 5–10° from E;
   - a reveal shown only while the camera moves (mid-glide, mid-snap, mid-tour or coasting), since every view is shot with the camera at rest or in the tour's hold;
-  - lighting outside the particles (the sky, the UI), and times other than t 0 and 7.3.
+  - a reveal shown only once E is reached another way, by a snap or the arrow keys;
+  - a reveal that waits at E longer than the dwells measured: 8 s idle after the glide, and 6 s in the tour's first hold;
+  - a reveal driven by the particle clock: every shot freezes it with `t`, which the shipped page never sets, so a reveal that ramps up as the clock runs never shows;
+  - lighting outside the particles (the sky, the UI), and times other than t 0 and 7.3;
+  - other renderers: the exact identities rest on SwiftShader's 8-bit additive blending.

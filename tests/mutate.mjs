@@ -43,8 +43,15 @@ const NEAR = 'Math.max(0, 1 - alignDeg() / 12)';
 const NEAR_SET = nearSet(NEAR);
 const PARTICLE_COLOUR = 'v_col = u_pal[code & 3] * (level * tw * fade * energy);';
 const TEXT_BRIGHTER = [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.25 * text * u_near));'];
+const GOLD_TINT = [PARTICLE_COLOUR, 'v_col = mix(u_pal[code & 3], vec3(1.0, 0.78, 0.46), 0.3 * text * u_near) * (level * tw * fade * energy);'];
 const BETA_LINE = 'const BETA_DEFAULT = 0.85;';
 const DEFAULT_DRAW = 'else gl.drawArrays(gl.POINTS, 0, N_TOTAL);';
+// `found` turns true when a glide lands, so the reveal shows only after "Find the angle".
+const FOUND = [['let ready = false, frames = 0;', 'let ready = false, frames = 0, found = false;'],
+  ["if (stepAnim(now)) { if (mode === 'tour') tourStep(); else mode = 'idle'; }", "if (stepAnim(now)) { if (mode === 'tour') tourStep(); else { if (mode === 'glide') found = true; mode = 'idle'; } }"]];
+// 1 once the camera has stayed within 1° of E in `mode` for 5 s; the timer restarts on leaving.
+const DWELL_DECL = ['let ready = false, frames = 0;', 'let ready = false, frames = 0, dwellFrom = null;'];
+const dwell = (m) => `(mode === '${m}' && alignDeg() < 1 ? (performance.now() - (dwellFrom ??= performance.now()) > 5000 ? 1 : 0) : (dwellFrom = null, 0))`;
 
 const PAGE_MUTANTS = [
   { name: 'reveal-brighter', defect: 'text particles brighten near E, up to 1.25× at E (a reveal)',
@@ -54,11 +61,17 @@ const PAGE_MUTANTS = [
   { name: 'reveal-on-tour', defect: 'text particles brighten near E only while the tour runs, up to 1.25× during its hold at E (a reveal that views with tour=0 do not show)',
     edits: [NEAR_UNIFORM, nearSet(`mode === 'tour' ? ${NEAR} : 0`), TEXT_BRIGHTER] },
   { name: 'reveal-after-glide', defect: 'once "Find the angle" has glided to E, text particles brighten near E, up to 1.25× at E (a reveal that views set by URL do not show)',
-    edits: [NEAR_UNIFORM, nearSet(`found ? ${NEAR} : 0`), TEXT_BRIGHTER,
-      ['let ready = false, frames = 0;', 'let ready = false, frames = 0, found = false;'],
-      ["if (stepAnim(now)) { if (mode === 'tour') tourStep(); else mode = 'idle'; }", "if (stepAnim(now)) { if (mode === 'tour') tourStep(); else { if (mode === 'glide') found = true; mode = 'idle'; } }"]] },
+    edits: [NEAR_UNIFORM, nearSet(`found ? ${NEAR} : 0`), TEXT_BRIGHTER, ...FOUND] },
+  { name: 'reveal-after-dwell', defect: 'text particles brighten 1.25× once the camera has stayed idle within 1° of E for 5 s (a reveal for a viewer who holds the angle, which shots taken on arrival do not show)',
+    edits: [NEAR_UNIFORM, nearSet(dwell('idle')), TEXT_BRIGHTER, DWELL_DECL] },
+  { name: 'reveal-late-in-tour-hold', defect: "text particles brighten 1.25× once the tour has stayed within 1° of E for 5 s (a reveal late in the tour's hold at E)",
+    edits: [NEAR_UNIFORM, nearSet(dwell('tour')), TEXT_BRIGHTER, DWELL_DECL] },
   { name: 'reveal-gold', defect: 'text particles take a gold tint near E, 30% at E (a reveal)',
-    edits: [NEAR_UNIFORM, NEAR_SET, [PARTICLE_COLOUR, 'v_col = mix(u_pal[code & 3], vec3(1.0, 0.78, 0.46), 0.3 * text * u_near) * (level * tw * fade * energy);']] },
+    edits: [NEAR_UNIFORM, NEAR_SET, GOLD_TINT] },
+  { name: 'reveal-gold-shipped', defect: 'text particles take a gold tint near E, 30% at E, in the shipped draw only (no layer set), so the layer=text and layer=ambient draws that the alike checks compare show none (a colour reveal that the light sums do not see)',
+    edits: [NEAR_UNIFORM, nearSet(`layer === null ? ${NEAR} : 0`), GOLD_TINT] },
+  { name: 'reveal-gold-after-glide', defect: 'once "Find the angle" has glided to E, text particles take a gold tint near E, 30% at E (a colour reveal that views set by URL do not show)',
+    edits: [NEAR_UNIFORM, nearSet(`found ? ${NEAR} : 0`), GOLD_TINT, ...FOUND] },
   { name: 'reveal-bigger', defect: 'text particles grow near E, up to 1.25× wider at E (a reveal)',
     edits: [NEAR_UNIFORM, NEAR_SET, ['float core = wsize * u_ppu / depth;', 'wsize *= 1.0 + 0.25 * text * u_near;\n  float core = wsize * u_ppu / depth;']] },
   { name: 'reveal-sharper', defect: 'text particles come into focus near E, their blur cut by 75% at E (a reveal)',
@@ -214,6 +227,18 @@ const TREE_MUTANTS = [
       j('  await popup.pa', 'use();'),
       '}', '',
     ].join('\n')) },
+  { name: 'arrow-helper-pause', defect: 'an arrow-function helper opens a page under a name without "page" in its first statement and pauses it, so a scan that reads the outer declaration to its first semicolon binds only the helper (R4-2)',
+    apply: (dir) => writeIn(dir, 'tests/lib/debug.mjs', [j('export const glide = async (context) => { const tab = await context.newPage(); await tab.pa', 'use(); };'), ''].join('\n')) },
+  { name: 'semicolon-free-pause', defect: 'a helper written without semicolons opens a page under a name without "page" and pauses it, so a scan that reads each declaration to its first semicolon binds only the first name (R4-2)',
+    apply: (dir) => writeIn(dir, 'tests/lib/debug.mjs', [
+      'export async function hold(browser) {',
+      '  const ctx = await browser.newContext()',
+      '  const tab = await ctx.newPage()',
+      j('  await tab.pa', 'use()'),
+      '}', '',
+    ].join('\n')) },
+  { name: 'powershell-quoted-switch-opener', defect: 'an npm script hands Windows PowerShell a quoted command that opens the page, after a switch whose value is quoted (R4-4)',
+    apply: (dir) => addNpmScript(dir, 'view', j('powershell -WindowStyle "Hidden" "i', 'i index.html"')) },
 ];
 function writeHook(dir, command) {
   writeIn(dir, '.claude/settings.json', JSON.stringify({ hooks: { PostToolUse: [{ matcher: 'Edit|Write', hooks: [{ type: 'command', command }] }] } }, null, 2) + '\n');

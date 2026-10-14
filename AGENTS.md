@@ -76,13 +76,13 @@ Obtain independent, preferably read-only review for substantial or high-risk cha
 
 ## Gates
 
-Node 24 (`.nvmrc`). Each command below was run on Windows 11 with Node 24.18.1 on 2026-10-11; `npm test` and the mutation proof again on 2026-10-12.
+Node 24 (`.nvmrc`). Each command below was run on Windows 11 with Node 24.18.1 on 2026-10-11; `npm test` and the mutation proof again on 2026-10-13.
 
 - `npm ci` installs the one dev dependency, Playwright 1.63.0 (pinned). It installs no browser, because neither `playwright` nor `playwright-core` has an install script.
 - `npx playwright install chromium` then puts that version's Chromium (153.0.8010.12) in the local Playwright cache. When the build is already there it reuses it and downloads nothing (2 s here). The gates use only that cache; nothing downloads at test time.
-- `npm test` runs the headless suite through `tests/run.mjs`: 36 tests in 70–75 s.
+- `npm test` runs the headless suite through `tests/run.mjs`: 36 tests in 90–100 s.
   - It runs `tests/illusion.test.mjs` alone first, then the other `tests/*.test.mjs` files two at a time, because SwiftShader WebGL2 is CPU-heavy (`tests/lib/phases.mjs`). So the timing checks, the font-hang loads and the control fling, never run beside the illusion file's renders.
-  - The illusion file queues all its views at start and renders them four at a time, one page in each of four browsers, because each browser draws all its pages in one GPU process.
+  - The illusion file queues most of its views at start and renders up to four at a time in four browsers, because each browser draws all its pages in one GPU process. `pump()` hands each 1280×800 view to the next browser in turn without checking which one is free, so two can render in one browser at once; every 390×844 view renders in browser 0 and every blank-readback view in browser 1. The camera-mode test opens its two pages beside the queue, and the seed test renders outside it.
   - It exits 1 when a test fails, a file fails to load or no test passed. `PAGE=<path relative to the repo root>` runs it against another copy of the page.
 - `npm audit --audit-level=high` runs after any dependency change.
 - `npm run shoot -- --preset=all` (or `magic`, `off`, or single views; see the header of `scripts/shoot.mjs`) is the visual instrument. It saves PNGs under `tmp/shots/` and prints each one's sha256 and what the page reports. A visual change still needs someone to look at the shots at native resolution; the gates do not replace that.
@@ -93,8 +93,8 @@ Node 24 (`.nvmrc`). Each command below was run on Windows 11 with Node 24.18.1 o
   - A mutant counts as killed only by a CHECK. One with only ERRORs is "errored". One with 0 green tests is flagged, since it may break the page wholesale rather than the one behaviour it names.
   - It exits 1 on any survivor, errored or flagged mutant.
   - Tree mutants are copies of the repo without `.git`, `node_modules`, `tmp`, test output and `.claude/worktrees`, so any file a command names is there too. Each is deleted once scanned.
-  - Run it after changing a gate or the page. The full run (63 mutants: 46 page, 17 tree) took 61 minutes on 2026-10-12, about 77 s per page mutant, since each runs the illusion file alone and then the other files. So run only the mutants a change touches by name, and keep it the only browser workload while it runs.
-  - A β 1.0 mutant (`full-relocation`) stays retired: review round 3 (F25) looked for a bound that holds β at 0.85 and found none (see Bound below).
+  - Run it after changing a gate or the page. The full run (70 mutants: 50 page, 20 tree) took 80 minutes on 2026-10-13, about 93 s per page mutant, since each runs the illusion file alone and then the other files. So run only the mutants a change touches by name, and keep it the only browser workload while it runs.
+  - A β 1.0 mutant (`full-relocation`) stays retired: review round 3 (F25) looked for a bound on a three-seed mean that holds β at 0.85 and found none (see Bound below). Until a gate holds it, β stays at 0.85 by decision ([docs/learning/lessons.md](docs/learning/lessons.md)).
 
 What the suite proves (each file's header states its exact bound):
 
@@ -110,9 +110,10 @@ What the suite proves (each file's header states its exact bound):
   - Every particle renders alike at every angle (owner directive, 2026-10-11).
     - At E, 3° (el+3), 12° (az−12, 11.6° from E), az+25, el−25 and the back, at t 0 and 7.3, the text particles carry the light (within 5%) and colour (warmth within 0.03) of the same particles drawn as ambient, and at t 0 their sprite size (within 15%).
     - The comparison uses `beta`. The text layer minus the sky holds the relocated particles drawn as text. The full `beta=0` render minus the ambient layer holds the same particles drawn as ambient where they started. Size is measured at `beta=0.02`, where the 121 text sprites are separate.
-    - Those draws are test-only, so the shipped render is tied to them: at each of those views its particle light over the sky equals the text layer's plus the ambient layer's within 1% (0.9993–0.9999 measured; additive blending makes them equal apart from 8-bit saturation). A reveal in the shipped draw alone, such as a second text pass near E, breaks the sum.
+    - Those draws are test-only, so the shipped render is tied to them pixel by pixel. At each of those views and times, the shipped render minus the sky must equal the text layer minus the sky plus the ambient layer minus the sky, in each of red, green and blue, capped at 255 as the 8-bit target caps it. The residual may be at most 0.1% of their light per channel. It measures exactly 0 for seeds 1–3, not one channel value off, because the page blends ONE/ONE with no depth buffer and computes depth of field per sprite.
+    - So any effect the shipped draw alone has, in light, colour, size or focus, breaks it. A 30% gold tint near E in the shipped draw only gives 2.5–3.6% at E and 3°, and a second text pass at 25% gives 4.1–5.8%. The old light-sum check passed the tint (0.9955–0.9968 against a 1% band).
     - The whole scene's particle light at E, 3° and 12° stays within 15% of its mean at the three far views, so nothing glows brighter as the camera nears E.
-    - E reached by a real click on "Find the angle" (the glide, then idle) and E held by the tour (in its 5 s hold) render the particles in the central region as E set by URL does, within 1%.
+  - The camera's modes and time spent at E do not change the picture. E reached by a real click on "Find the angle" is shot when the glide lands and again after 8 s idle there. E held by the tour is shot 6 s after the page's first frame, late in the hold that lasts until about 8.2 s. Each shot must match E set by URL in the central region pixel by pixel, per channel (residual at most 0.1%; exactly 0 measured), and the idle shot must match the arrival shot too.
   - The text layer at E holds still over time, and zoom only scales the image.
   - From 25° out (±25° az and el, +60° az) the E strokes are no brighter than the back-view floor + 0.09, and that floor stays below 1.19, both as means over seeds 1–3. The back view is the floor, not a case tested against it.
   - The az+25 text layer is a smear that changes with the seed.
@@ -132,23 +133,31 @@ What the suite proves (each file's header states its exact bound):
   - Every Playwright launch passes a literal `headless: true`, with no spread, no call building its options and no channel.
   - Nothing names a system browser, a desktop opener, an opener package or live-reload server (`open-cli`, `live-server`, `lite-server`, `browser-sync`, `npx open`, `http-server -o`), `connectOverCDP`, or a headed, debug, UI, inspector, code-generator, open or report mode (`--headed`, `--debug`, `--ui`, `--open`, `PWDEBUG`, `playwright open` and `playwright@<version> open`, `show-report`). A Playwright config picks no channel.
   - Nothing calls `pause()` on a receiver that can be a page: one whose chain names "page", or a name that can hold one.
-    - A name can hold a page when the file declares it from a statement that calls `newPage`, `pages()` or `waitForEvent`, alone or in a destructuring pattern, as in `const [popup] = await Promise.all([page.waitForEvent('popup'), …])`.
+    - A name can hold a page when the file declares it from a statement that calls `newPage`, `pages()` or `waitForEvent`, alone or in a destructuring pattern, as in `const [popup] = await Promise.all([page.waitForEvent('popup'), …])`. A declaration nested in another, such as an arrow helper's first statement, and each declaration in code without semicolons count on their own.
     - It can also when the file assigns it, awaited or not, from a bare name that can hold a page or names "page", as in `const popup = await popupPromise`.
     - Pauses on sockets, requests, streams, media and animations pass.
-  - No shell command runs an opener where a command starts: at a line start, after `;`, `&`, `|`, `(` or a backtick, after `cmd /c`, `sh -c` (or `-lc`) or `-Command`, or after `powershell` or `powershell.exe` and its switches, since Windows PowerShell runs its first other argument as a command. The command word may be quoted there; a quote anywhere else is text, as in `echo "open tasks: 3"`.
+  - No shell command runs an opener where a command starts: at a line start, after `;`, `&`, `|`, `(` or a backtick, or after `cmd /c`, `sh -c` (or `-lc`) or `-Command`. The command word may be quoted there; a quote anywhere else is text, as in `echo "open tasks: 3"`.
+    - Windows PowerShell started where a command starts runs its first argument that is not a switch or a switch's value as a command. So after `powershell` or `powershell.exe` there and its switches, whose values may be quoted (`powershell -WindowStyle "Hidden" "ii index.html"`), the next word counts as a command start too.
+    - The word `powershell` anywhere else is text, as in `git commit -m "fix powershell start script"`.
   - Only Playwright code builds `file:` URLs, including from `import.meta.url` outside `fileURLToPath`.
   - Child processes start only Node, in files and in commands such as `node -e`, whether `child_process` is imported whole, by name, renamed or destructured.
 
-Bound: one engine, headless Chromium 153 with SwiftShader WebGL2, device pixel ratio 1 for the image gates, and only the listed views, times, seeds, `beta` values and inputs. The image gates measure luminance and shape, not whether a person can read the text.
+Bound: one engine, headless Chromium 153 with SwiftShader WebGL2, device pixel ratio 1 for the image gates, and only the listed views, times, seeds, `beta` values and inputs. The exact pixel identities rest on SwiftShader's 8-bit additive blending. The image gates measure light, colour and shape, not whether a person can read the text.
 - A reveal confined to angles between the measured views (for example only 5–10° from E) would pass them.
 - So would one shown only while the camera moves (mid-glide, mid-snap, mid-tour or coasting), since every view is shot with the camera at rest or in the tour's hold, or only once E is reached another way (a snap, the arrow keys).
-- Nor do they hold β at 0.85 (review round 3, F25). β 1.0 adds about 15% to a given seed's az+25 row residual. But the mean over three seeds moves more than that from one set of seeds to the next: 1.42–1.69 with β 0.85 against 1.64 and 1.90 with β 1.0. So no bound tells them apart.
+- So would one that waits at E longer than the dwells measured: 8 s idle after the glide, and 6 s in the tour's first hold.
+- So would one driven by the particle clock: every shot freezes it with `t`, which the shipped page never sets.
+- Nor do they hold β at 0.85 (review round 3, F25; the lesson is in [docs/learning/lessons.md](docs/learning/lessons.md)). The measure is the az+25 row residual over the cloud's own noise, as a mean over three seeds.
+  - β 0.85 measures 1.416, 1.693, 1.556 and 1.524 for seeds 1–3, 4–6, 7–9 and 10–12. β 1.0 measures 1.637 for seeds 1–3 and 1.897 for seeds 4–6.
+  - Per seed (1–6), β 1.0 changes it by −0.3% to +37%, +14% on average.
+  - So no bound on a three-seed mean tells them apart: β 1.0 at seeds 1–3 lies inside β 0.85's own range. A mean over about 12 seeds would, at about four times the illusion file's cost.
 
 No screen reader was available, so the accessibility check reads Chromium's tree, not what NVDA or JAWS do with it.
 
 The hygiene scan's blind spots:
 - code assembled at run time: `eval`, strings or names built from pieces, computed keys such as `cp['exec']`, a launch method reached by destructuring;
 - a page under a name without "page" that the file does not bind itself, such as a parameter called `tab`, or reaches only through a member or a call;
+- Windows PowerShell started as another program's argument rather than where a command starts, such as `cross-env powershell "ii index.html"` or `call powershell …`, unless `-Command` comes before the command;
 - programs that open a browser by default but are not named in the scan;
 - files of other types, and repo files outside the scanned folders that only code names, such as a path passed to a Node child process;
 - files outside the scanned paths that no command names: `docs/`, `tmp/`, `node_modules` and its install scripts, git hooks, `~/.claude`, settings files `.gitignore` names, and agents' scratch scripts outside the repo;
@@ -160,6 +169,7 @@ It still flags a few harmless forms, listed in its header: a `pause()` on a non-
 
 - The page stays one self-contained `index.html` that opens straight from disk: no build step, no external scripts, no runtime dependencies. The only external request is the optional Google Fonts stylesheet.
 - Every particle renders the same way at every camera angle: text and ambient particles get the same light, colour, size and focus at E and everywhere else, and nothing in the scene brightens as the camera nears E. The words become obvious only because the particles line up there (owner directive, 2026-10-11: "They need to be glowing consistently no matter what angle. The words should be entirely depending on the right angle to be obvious.").
+- The particles are drawn in one additive pass that the test-only layers split exactly: ONE/ONE blending into the 8-bit canvas, no depth buffer, depth of field computed per sprite, and `layer=text` and `layer=ambient` each drawing one of the two ranges the shipped draw covers. The alike gate's pixel identity rests on this, so a change to the draw that turns it red needs the gate rethought, not its bound loosened.
 - Text particles move only along their own sight-line from the secret eye, so their projection from it never changes. Ambient drift plus wobble is at most about 0.52 world units. Seen from E that is 0.42σ at the text plane and less beyond it (σ is the relocation width in the plan), but up to about 0.9σ for the nearest particles. So the density that hides the text holds closely at and beyond the plane and only roughly in front of it.
 - Zoom changes the field of view only. The eye stays on the orbit sphere with world-up roll, because moving it breaks the illusion.
 - The letters lean right by `SLANT` (14°), each line sheared about its own baseline. An elevation turn keeps every particle's screen column, so upright stems would show above and below E as vertical streaks; leaning ones spread over many columns. The layout gate undoes the lean before it measures and then holds the stems within 4° of upright, so `SLANT_DEG` in `tests/illusion.test.mjs` changes together with `SLANT`. The streak gate holds the el±25 column residual that the lean is for.
