@@ -11,7 +11,7 @@ With upright letters, the β 1.0 mutant was killed by the relocation-residual ga
 W11 then looked for an absolute bound: the az±25 row residual over the cloud's noise, as a mean over seeds 1–3.
 - The real page (β 0.85) measured 1.416 for seeds 1–3, 1.693 for 4–6, 1.556 for 7–9 and 1.524 for 10–12.
 - β 1.0 measured 1.637 for seeds 1–3 and 1.897 for 4–6.
-- Per seed, β 0.85 to 1.0 rose between 0% and 37%, about 14% on average.
+- Per seed (1–6), β 0.85 to 1.0 changed it by −0.3% to +36.6%, +14.4% on average.
 
 So the real page's own redraws overlap β 1.0. The hidden excess, the residual over the floor and the el±25 column all overlap too: the last has a margin of only 0.05.
 
