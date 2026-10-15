@@ -78,7 +78,38 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
 ## Implementation steps
 
 - [x] Coordinator: allocate this folder and write the plan and contract.
-- [ ] M1 W16: the page.
+- [x] M1 W16: the page, left uncommitted for W17 to commit with the gates. A session end interrupted it; it resumed by agent ID with no work lost.
+  - **Cloud:** 48,000 particles; 30,256 of them are text. β stays 0.85, ink is 0.2 world units, σ is about 1.58.
+  - **Each particle** gets at most one message, by one draw over its normalized chances. An ambient particle's swell uses a "home" eye drawn by share from its own stream, so `beta=0` twins differ only in relocated particles.
+  - **Eyes and text particles:**
+
+    | Message | Eye (az, el) | Text particles |
+    |---|---|---|
+    | hello world | 38, 14 | 9,115 |
+    | face | 98, 18 (weight 0.6) | 4,657 |
+    | What | 158, 16 | 4,659 |
+    | a | 218, 20 | 2,843 |
+    | beautiful | 278, 16 | 4,278 |
+    | world | 338, 18 | 4,704 |
+
+    The start view is (8, −16). Every eye sits at +14° or higher, because an eye within about 20° of another's antipode sees that message mirrored and radially smeared (the face's smile showed under "beautiful" when the face was at −30°).
+  - **Legibility**, as the stroke/gap ratio from each message's own text layer minus the sky, at 1280 / 390:
+
+    | Message | Ratio |
+    |---|---|
+    | hello world | 2.00 / 1.89 |
+    | face | 1.76 / 1.72 |
+    | What | 1.83 / 1.77 |
+    | a | 1.71 / 1.73 |
+    | beautiful | 1.84 / 1.82 |
+    | world | 1.77 / 1.73 |
+
+    Particle-only contrast is lower than the lone hello world's old 4.7 (2.4–3.1), because each message gets only 51–64% of what it would claim alone.
+  - **Sequence:** glides of 1.5 s + 50 ms/° (smootherstep) and holds of 3 s. The load tour lasts about 45 s and ends idle at "world"; the capture loop is about 44.2 s.
+  - **Budget:** fill rate about 2.6× the old page (24.4 M sprite fragments per frame at 1920×1080 and DPR 2, overdraw about 3×). It is not measured on a real GPU.
+  - **`npm test`:** 28 of 36 pass. All 8 failures are in the illusion file and come from the single-message assumptions; W16 diagnosed each one for W17. The colour check's 0.926 blue is 8-bit clipping in dense strokes: over unclipped pixels the channels agree within 0.1%.
+  - **Coordinator looked at native resolution:** the face (eyes too faint), "What" (clear) and "beautiful" at 390 (small but legible).
+  - Follow-up, in progress: W16 makes the face's eyes clearly visible.
 - [ ] M2 W17: the gates and the commit.
 - [ ] Review, repairs, visual acceptance, republish, devlog.
 
