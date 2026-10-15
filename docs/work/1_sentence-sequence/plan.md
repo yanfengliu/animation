@@ -109,8 +109,12 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
   - **Budget:** fill rate about 2.6× the old page (24.4 M sprite fragments per frame at 1920×1080 and DPR 2, overdraw about 3×). It is not measured on a real GPU.
   - **`npm test`:** 28 of 36 pass. All 8 failures are in the illusion file and come from the single-message assumptions; W16 diagnosed each one for W17. The colour check's 0.926 blue is 8-bit clipping in dense strokes: over unclipped pixels the channels agree within 0.1%.
   - **Coordinator looked at native resolution:** the face (eyes too faint), "What" (clear) and "beautiful" at 390 (small but legible).
-  - Follow-up, in progress: W16 makes the face's eyes clearly visible.
-- [ ] M2 W17: the gates and the commit.
+  - Follow-up done:
+    - The face's eyes grew from 0.55 to 0.9 face units (`index.html:191`, sha256 `2b96e35b…`).
+    - Small eye loops read better on their own but cost "beautiful" 0.085, because they survive the radial smear seen from near the face's antipode.
+    - The other five ratios moved by at most about 0.03 (three-seed means).
+    - Coordinator looked at native resolution: the face reads as a face, with clear eyes.
+- [ ] M2 W17 started: gates for every message, the sequence and capture.
 - [ ] Review, repairs, visual acceptance, republish, devlog.
 
 ## Outcome
