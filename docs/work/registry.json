@@ -4,6 +4,10 @@
     {
       "id": 0,
       "theme": "hello-world-cloud"
+    },
+    {
+      "id": 1,
+      "theme": "sentence-sequence"
     }
   ]
 }
