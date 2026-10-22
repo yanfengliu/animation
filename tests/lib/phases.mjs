@@ -3,7 +3,7 @@
 // browsers, and the timing checks in the other files (the font-hang loads in page.test.mjs, the
 // control fling in controls.test.mjs) must never run beside those bursts (review round 3, R3-5).
 // The sequence file runs next, beside only the hygiene scan, which opens no browser: it keeps up to
-// nine pages drawing in six browsers for about 60 s, and when it ran beside page.test.mjs the
+// nine pages drawing in six browsers for about 70 s, and when it ran beside page.test.mjs the
 // font-hang check's load with the stylesheet answered took 2.7 s and the one with it hung 6.1 s,
 // 1.4 s past the check's 2 s margin (W19, 2026-10-22). Its own timed shots stay clear of the other
 // files' loads too. The other files then run two at a time.

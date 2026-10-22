@@ -23,7 +23,8 @@
 // or a value the page would not read as meant (it quietly renders its default for those).
 // Exits 1 when WebGL2 is missing, the page logs an error, or a requested view did not take. A view
 // with capture=1, or with tour=1 and without reduced=1, moves the camera on after its first hold, so
-// its msg, az, el and fov are checked on the first frame the page reports ready, not on the shot.
+// its msg, az, el and fov are checked on the view of the first frame the page draws ready, not on
+// the shot. An init script latches that view as the frame ends, so a slow read cannot miss it.
 
 import { chromium } from 'playwright';
 import { createHash } from 'node:crypto';
@@ -49,6 +50,17 @@ const CHOICES = {
   msg: { values: MESSAGES, help: `msg=NAME with NAME one of ${MESSAGES.join(', ')}` },
   textof: { values: MESSAGES, help: `textof=NAME with NAME one of ${MESSAGES.join(', ')}` },
   capture: { values: ['0', '1'], help: 'capture=1 (open the page with #capture) or capture=0' },
+};
+
+// Wraps requestAnimationFrame, passes every frame through unchanged, and keeps what view() reports
+// after the first frame that ends with the page ready (window.__firstView).
+const LATCH = () => {
+  const raf = window.requestAnimationFrame.bind(window);
+  window.requestAnimationFrame = (cb) => raf((ts) => {
+    cb(ts);
+    const c = window.__cloud;
+    if (c && c.ready && !window.__firstView) window.__firstView = c.view();
+  });
 };
 
 const opts = { viewport: '1280x800', dpr: '1', t: '0', frames: '4', out: 'tmp/shots', preset: '' };
@@ -187,6 +199,7 @@ async function shoot(v) {
   if (t !== 'live') query.set('t', t);
   query.set('tour', v.tour ?? '0');
   const context = await browser.newContext({ viewport: { width: vw, height: vh }, deviceScaleFactor: dpr, reducedMotion: v.reduced === '1' ? 'reduce' : 'no-preference' });
+  await context.addInitScript(LATCH);
   const page = await context.newPage();
   const problems = [];
   const fontUrl = /^https:\/\/fonts\.(googleapis|gstatic)\.com\//;
@@ -213,9 +226,9 @@ async function shoot(v) {
   }
   // Capture mode, and the tour without reduced motion, hold the camera where the query put it for
   // their first 2 s or 1.5 s and then move it on. For those views msg, az, el and fov are checked on
-  // the first frame the page reports ready; for the others, on the frame shot.
+  // the view latched on the first frame the page drew ready; for the others, on the frame shot.
   const moves = v.capture === '1' || (v.tour === '1' && v.reduced !== '1');
-  const first = await page.evaluate(() => window.__cloud.view());
+  const first = await page.evaluate(() => window.__firstView);
   const f0 = await page.evaluate(() => window.__cloud.frame);
   const frames = Number(opts.frames);
   await page.waitForFunction((n) => window.__cloud.frame >= n, f0 + frames, { timeout: 20000 });

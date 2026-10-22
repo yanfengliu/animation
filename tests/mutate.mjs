@@ -271,6 +271,34 @@ const PAGE_MUTANTS = [
   // own light at its eye (F70). The hiding check, which reads the layers away from the eyes, passes it.
   { name: 'textof-ignored', defect: 'textof=<name> is ignored, so a message\'s text layer draws every message\'s text particles (F70)',
     edits: [["const textOf = layer === 'text' ? M.findIndex((m) => m.name === params.get('textof')) : -1;", 'const textOf = -1;']] },
+  // Repair round 2 (R2a): the sequence, capture mode and reduced motion.
+  { name: 'reveal-after-tour', defect: 'once the tour at load has played, text particles brighten 1.25× wherever the camera rests idle at an eye, so at "world", where the tour ends (a reveal for a visitor who watches the tour to its end, which views with tour=0 do not show; F78)',
+    edits: [TEXT_DECL, NEAR_UNIFORM, nearSet("autoplayed && mode === 'idle' && atMessage() >= 0 ? 1 : 0"), TEXT_BRIGHTER] },
+  // In a hold, as in the history-blocked test's, Escape still stops the camera at once, so only the
+  // capture loop test, which presses Escape mid-glide, sees this.
+  { name: 'escape-glides-on', defect: 'Escape in capture mode during a glide lets the glide run on for 0.25 s before the camera stops (F80)',
+    edits: [["  document.documentElement.classList.toggle('capture', on);\n  stopAuto();\n", "  document.documentElement.classList.toggle('capture', on);\n  if (on || !(anim && anim.target)) stopAuto(); else { seq = null; mode = 'glide'; setTimeout(stopAuto, 250); }\n"]] },
+  { name: 'reduced-switch-find-glides-on', defect: 'reduced motion switched on during a "Find the angle" glide lets the glide run on to its eye (F81)',
+    edits: [["  if ((mode === 'glide' || mode === 'snap') && anim) {", "  if (mode === 'snap' && anim) {"]] },
+  { name: 'reduced-switch-snap-runs-on', defect: 'reduced motion switched on during a snap lets the snap run on to its eye (F81)',
+    edits: [["  if ((mode === 'glide' || mode === 'snap') && anim) {", "  if (mode === 'glide' && anim) {"]] },
+  { name: 'reduced-switch-coasts-on', defect: 'reduced motion switched on during a coast lets the coast run on (F81)',
+    edits: [["  if (mode === 'inertia') { settle(); return; }\n", '']] },
+  // The sequence file's switch test now times the cut hold from the switch, not from the first frame
+  // after it; this keeps that bound proven.
+  { name: 'reduced-switch-short-hold', defect: 'the cut hold that reduced motion switched on mid-glide begins lasts 3 s, not 4 s',
+    edits: [['    anim = null;\n    nextStep();\n  }\n});', '    anim = null;\n    nextStep();\n    if (anim && !anim.target) anim.ms = 3000;\n  }\n});']] },
+  // F86: one mutant for each sequence check that had none.
+  { name: 'hold-names-next-early', defect: 'each hold of the sequence names the next message for its last 250 ms, though the camera is still at the eye, past the 100 ms that NEXT_MAX_MS allows (F86)',
+    edits: [["const k = heading >= 0 && (mode === 'tour' || mode === 'glide' || mode === 'snap') ? heading : atMessage();", "const k = heading >= 0 && (mode === 'tour' || mode === 'glide' || mode === 'snap') ? (mode === 'tour' && anim && !anim.target && performance.now() - anim.t0 > anim.ms - 250 ? (heading + 1) % M.length : heading) : atMessage();"]] },
+  { name: 'find-glide-drops-target', defect: 'halfway through a "Find the angle" glide target() stops naming the message it heads for (F86)',
+    edits: [["  } else if (anim && (mode === 'tour' || mode === 'glide' || mode === 'snap')) {\n", "  } else if (anim && (mode === 'tour' || mode === 'glide' || mode === 'snap')) {\n    if (mode === 'glide' && now - anim.t0 > anim.ms / 2) heading = -1;\n"]] },
+  { name: 'find-ignores-msg', defect: 'msg=<name> puts the camera at that eye but leaves "Find the angle" at the start of the sequence, so from msg=a it goes to hello world, not "beautiful" (F86)',
+    edits: [['cam.el = M[msgParam].el * DEG; cursor = msgParam;', 'cam.el = M[msgParam].el * DEG;']] },
+  { name: 'capture-reentry-reloads', defect: 'adding #capture back to the address starts capture mode by loading the page again, not in the same document (F86)',
+    edits: [["window.addEventListener('hashchange', () => setCapture(location.hash === '#capture'));", "window.addEventListener('hashchange', () => { if (location.hash === '#capture') location.reload(); else setCapture(false); });"]] },
+  { name: 'escape-drops-anchor-once', defect: 'Escape takes the #capture anchor out of the address only the first time, so after capture mode starts again a second Escape leaves it (F86)',
+    edits: [["function dropCaptureAnchor() {\n  if (location.hash !== '#capture') return;", "let dropped = false;\nfunction dropCaptureAnchor() {\n  if (dropped || location.hash !== '#capture') return;\n  dropped = true;"]] },
 ];
 
 // The hygiene gate scans text, including this file, so the defects below are assembled from

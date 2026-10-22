@@ -1059,9 +1059,13 @@ window.addEventListener('hashchange', () => setCapture(location.hash === '#captu
 
 motionQuery.addEventListener('change', (e) => {
   reduced = e.matches;
+  if (!reduced) return;
+  // A coast stops at once, as at its end, and a "Find the angle" glide or a snap lands on its eye.
+  if (mode === 'inertia') { settle(); return; }
+  if ((mode === 'glide' || mode === 'snap') && anim) { stepAnim(anim.t0 + anim.ms); mode = 'idle'; heading = -1; return; }
   // The sequence at load stops. One the viewer asked for (Play, capture) cuts from here on: a glide
   // under way ends at its eye at once, and the hold there is a cut hold.
-  if (!reduced || !seq) return;
+  if (!seq) return;
   if (seq.auto) { stopAuto(); return; }
   seq.cut = true;
   if (anim && anim.target) {
