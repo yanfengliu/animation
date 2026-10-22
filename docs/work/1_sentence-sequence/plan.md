@@ -183,7 +183,13 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
     - The load tour is pictured idle at "world", on arrival and 8 s later.
     - Hold shots are clipped, and ended 1.11–1.43 s before their holds did.
     - The old Escape check pressed during a hold, so it never tested a glide; it now presses mid-glide.
-  - [ ] R2b: F77, F82, F84, F85, and F86's two lower edges.
+  - [x] R2b, W24: F77, F82, F84, F85, and F86's two lower edges, committed as `8560485` on 2026-10-22. `index.html` is unchanged.
+    - `npm test`: 48 of 48 in three runs (211.4–214.3 s).
+    - 11 named mutant runs (three new mutants): all killed by checks after green controls.
+    - The budget probe now measures each draw with its own state. A sizing uniform raised 1.25× for one draw now fails at 4.25–4.61× against the 3× budget.
+    - The alike bounds hold for seeds 1–12 (`MAX_CLIPPED` reaches 7.46% for seed 8 against 8%).
+    - The identity of the shipped render with the two layers is now stated as measured: one-level differences in 7–623 channel values a frame, residual at most 0.0013% against 0.1%.
+  - F87, found by W24: the camera-mode and hold pictures still claim "exactly 0 measured", but the runs print those residuals only to four decimals, so the claim is unproven. The wrap-up docs pass corrects it, unless review round 2 finds more.
 - [ ] Full mutation proof on the final revision, the only browser workload while it runs, beside review round 2.
 - [ ] Republish the artifact, then the devlog, Outcome and cleanup.
 
