@@ -150,7 +150,15 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
     - 13 named mutants, 6 of them new: all killed by checks after a green control (2,662 s).
     - Rendering unchanged: 27 of 27 acceptance digests are identical. The page gained a test-only `relocate=<name>` hook.
     - The far-view hiding gate (`MAX_GHOST_LIFT` 1.33) holds the antipode ghosts near today's level: the page reaches 1.297 at most, and a mutant that halves "world"'s depth reaches 1.376.
-  - [ ] R1c, W21: F62, F66, F69, F71, F74 and F76, plus the `scripts/shoot.mjs` and defect-register parts of F75 (sequence, page, capture mode).
+  - [x] R1c, W21: F62, F66, F69, F71, F74 and F76, plus the `scripts/shoot.mjs` and defect-register parts of F75 (sequence, page, capture mode), committed as `0a1329b` on 2026-10-22.
+    - `npm test`: 47 of 47 in three runs (201.2–202.9 s).
+    - 25 named mutants, 17 of them new: all killed by checks after a green control (5,565 s).
+    - Rendering unchanged: 27 of 27 acceptance digests are identical.
+    - Page changes:
+      - Escape removes the bare `#capture` anchor, guarded for hosts that block history changes;
+      - the readout gives way to the buttons on narrow screens.
+    - Budget gate: at most 48,000 particles a frame, and sprites covering at most 3× the screen at 1920×1080, DPR 2 (2.72–2.95× measured at the start view and the six eyes).
+    - Open risk: fully zoomed in, sprites cover about 13.6× the screen, and no gate bounds that. Capture mode never zooms past the default.
   - [ ] R1d: F65, F68, F70 and the `tests/illusion.test.mjs` parts of F75 (illusion gates). F72 joins it, or a later milestone, if the owner wants a loopable clip.
 - Owner questions, 2026-10-22:
   - F72: should one recorded pass loop as a video without a jump? That needs the particles' drift to repeat once per pass.
