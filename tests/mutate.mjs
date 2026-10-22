@@ -48,6 +48,8 @@ const TEXT_DECL = ['int code = int(a_seed.w + 0.5);', 'int code = int(a_seed.w +
 const TEXT_BRIGHTER = [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.25 * text * u_near));'];
 // u_near for another message: 1 at the eye of message k (0-based, in sequence order), 0 from 12° out.
 const nearMessage = (k) => `Math.max(0, 1 - alignTo(${k}) / 12)`;
+// The particles of "a" (message 3) alone: their text code gets 16 more, which the shader reads as `mine`.
+const ONLY_A = [['int code = int(a_seed.w + 0.5);', 'int code = int(a_seed.w + 0.5);\n  float mine = code >= 16 ? 1.0 : 0.0;'], ['if (k >= 0) data[o + 9] += 8;', 'if (k >= 0) data[o + 9] += k === 3 ? 24 : 8;']];
 const GOLD_TINT = [PARTICLE_COLOUR, 'v_col = mix(u_pal[code & 3], vec3(1.0, 0.78, 0.46), 0.3 * text * u_near) * (level * tw * fade * energy);'];
 // Review round 5 (R5-1): red and blue down, green up, so luminance and warmth stay where they were.
 const GREEN_TINT = [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * mix(vec3(1.0), vec3(0.739, 1.10, 0.739), text * u_near) * (level * tw * fade * energy);'];
@@ -213,9 +215,7 @@ const PAGE_MUTANTS = [
     edits: [['loop, auto, cut: reduced, zoom', 'loop, auto, cut: false, zoom']] },
   // Repair round 1 (R1b): the illusion gates.
   { name: 'reveal-only-a', defect: 'only the particles of "a" brighten near its eye, up to 1.25× there, so the whole text layer, which holds all six messages\' particles, dilutes the reveal (F51)',
-    edits: [['int code = int(a_seed.w + 0.5);', 'int code = int(a_seed.w + 0.5);\n  float mine = code >= 16 ? 1.0 : 0.0;'], NEAR_UNIFORM, nearSet(nearMessage(3)),
-      ['if (k >= 0) data[o + 9] += 8;', 'if (k >= 0) data[o + 9] += k === 3 ? 24 : 8;'],
-      [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.25 * mine * u_near));']] },
+    edits: [...ONLY_A, NEAR_UNIFORM, nearSet(nearMessage(3)), [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.25 * mine * u_near));']] },
   { name: 'reveal-blue-clipped', defect: 'text particles near E take a blue tint, blue × 1.5 with red and green × 0.96 at E, which saturates the blue of their densest strokes, so the colour check would leave out more of the text layer than its bound allows (F52)',
     edits: [TEXT_DECL, NEAR_UNIFORM, NEAR_SET, [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * mix(vec3(1.0), vec3(0.96, 0.96, 1.5), text * u_near) * (level * tw * fade * energy);']] },
   { name: 'depth-squeezed-messages', defect: 'the five messages after hello world keep only a third of their particles\' spread in depth about their text planes, so from far off they show as flatter, sharper copies, mirrored near their antipodes (F53)',
@@ -299,6 +299,22 @@ const PAGE_MUTANTS = [
     edits: [["window.addEventListener('hashchange', () => setCapture(location.hash === '#capture'));", "window.addEventListener('hashchange', () => { if (location.hash === '#capture') location.reload(); else setCapture(false); });"]] },
   { name: 'escape-drops-anchor-once', defect: 'Escape takes the #capture anchor out of the address only the first time, so after capture mode starts again a second Escape leaves it (F86)',
     edits: [["function dropCaptureAnchor() {\n  if (location.hash !== '#capture') return;", "let dropped = false;\nfunction dropCaptureAnchor() {\n  if (dropped || location.hash !== '#capture') return;\n  dropped = true;"]] },
+  // Repair round 2 (R2b): the budget probe and the lower edges of two light bands.
+  // The image gates draw at DPR 1, so only the budget check, which measures sprites at DPR 2, can see
+  // this. Before R2b its probe replayed the frame's draws after it, with u_ppu back at its old value,
+  // and measured the old sprites: 2.72–2.95× the screen, where this draws 4.25–4.61× (F77).
+  { name: 'ppu-raised-for-the-draw', defect: 'at DPR 2 the particle draw runs with u_ppu, the pixels per world unit that size every sprite, raised 1.25× and set back right after it, so the sprites cover about 1.56× as many pixels while the uniform reads as before once the frame is drawn (F77)',
+    edits: [[DEFAULT_DRAW, 'else {\n    if (ratio >= 2) gl.uniform1f(u.u_ppu, 1.25 * h / 2 / th);\n    gl.drawArrays(gl.POINTS, 0, N_TOTAL);\n    gl.uniform1f(u.u_ppu, h / 2 / th);\n  }']] },
+  // F86: each is killed by its band's lower edge alone. Its own particles read 0.875 against the
+  // per-message band's 0.95; the whole text layer at the eye of "a" holds all six messages'
+  // particles, so it dilutes the change, as it does reveal-only-a's, and reads 0.981.
+  { name: 'dims-only-a', defect: 'only the particles of "a" dim near its eye, down to 0.85× there, so they carry less light there than the same particles drawn as ambient (F86)',
+    edits: [...ONLY_A, NEAR_UNIFORM, nearSet(nearMessage(3)), [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 - 0.15 * mine * u_near));']] },
+  // At the eye of "What" the band over the far views sits highest (1.021 for seed 1), so a dimming
+  // there that the scene-light bound at the eyes catches (0.906 against 0.95) stays inside that band
+  // (0.924 against 0.85).
+  { name: 'scene-dims-near-what', defect: 'every particle dims near the eye of "What", down to 0.9× there and back to full light 12° out, so the whole cloud darkens as the camera nears it (F86)',
+    edits: [NEAR_UNIFORM, nearSet(nearMessage(2)), [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 - 0.1 * u_near));']] },
 ];
 
 // The hygiene gate scans text, including this file, so the defects below are assembled from

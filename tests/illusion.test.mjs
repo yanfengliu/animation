@@ -45,7 +45,7 @@
 //   particles is not diluted by the other five; the shipped render minus the sky
 //   equals the text layer minus the sky plus the ambient layer minus the sky, pixel by pixel and
 //   channel by channel, capped at 255 as the 8-bit target caps it (residual at most 0.1% of their
-//   light in each channel; exactly 0 measured), so the shipped draw is the one those comparisons
+//   light in each channel; at most 0.0013% measured), so the shipped draw is the one those comparisons
 //   measured and any effect it alone has (light, colour, size or focus) shows; and the scene's
 //   particle light at E, 3°, 12° and every other eye is within 15% of its mean over the far views,
 //   and at each eye (t 0) within SCENE_RING_BAND of its mean at the two midpoints beside it, which
@@ -63,12 +63,18 @@
 //   1–3), which is what the 14° lean buys;
 // - the same seed builds the same cloud and another seed a different one.
 // Re-measure, do not retune: every bound sits between the real page and its mutants as measured for
-// seeds 1–3 and checked for seeds 4–12 (values beside each threshold; "in threes" means the mean
-// over seeds 4–6, 7–9 and 10–12, as redraws would give). A change that redraws the cloud without
+// the seeds its check reads (seed 1, or the mean over seeds 1–3), and the page also passes it for
+// seeds 4–12 (values beside each threshold; "in threes" means the mean over seeds 4–6, 7–9 and
+// 10–12, as redraws would give), except MIN_TIME_IOU, MIN_SCALE_IOU and the two smear bounds, which
+// were measured for seed 1 only. A change that redraws the cloud without
 // changing the design (one more rand() call in buildCloud, another N_TOTAL, a glyph tweak, another
 // eye) moves every one of them. If a bound turns red after such a redraw, re-measure seeds 1–3 and
 // the spread over further seeds (tmp-only scripts, as W11 and W17 did) and record what moved before
 // touching the threshold.
+// MAX_CLIPPED and OWN_LIGHT_BAND partly measure the 8-bit cap, not a difference between text and
+// ambient particles. So a change that keeps every particle alike but raises clipping (bigger
+// sprites, more particles, a brighter palette; values beside them) can turn "renders alike" red:
+// look at clipping before reading a red there as a reveal (review round 1, F82).
 // Does not prove: that a person can read the text; views, times or seeds not listed (for the other
 // five messages only t 0, seed 1 and the default zoom at each viewport; their layout, zoom and
 // readback are not measured); real GPUs or device pixel ratios above 1 (the exact identities rest on SwiftShader's
@@ -86,7 +92,8 @@
 // colour shift of up to 3% in a channel or a size change of up to 15%, which the bands pass; a colour
 // change in the pixels the colour check leaves out (at most MAX_CLIPPED of each image's lit pixels,
 // but at E they hold 32% of the text layer's light), or one confined to one message's particles,
-// whose share of the whole text layer dilutes it (only their light is compared on its own); a
+// whose share of the whole text layer dilutes it (only their light is compared on its own, and
+// OWN_LIGHT_BAND passes them 6.1–10.1% brighter or 6.8–10.0% dimmer at their eye, seed 1); a
 // whole-scene glow near an eye below 5.5% at E or 3.1–4.8% at the other eyes (for a glow that fades
 // out by 12°), or a wider one as far as it lights the midpoints beside the eye too.
 // Nor does it hold β at 0.85 (review round 3, F25; the lesson is in docs/learning/lessons.md).
@@ -107,19 +114,19 @@ const MIN_SCALE_IOU = 0.7;       // zoomed strokes vs base strokes scaled: 0.950
 const MAX_GHOST_LIFT = 1.33;     // a message's stroke/gap ratio on its ghost mask away from its eye, over the same view's at beta=0 (mean over seeds 1–3; seed 1 alone at the other eyes and midway to the neighbours): ≤ 1.269 real ("beautiful" at its antipode; ≤ 1.297 in threes, mask seeds 13–15), and for seed 1 ≤ 1.175 at the other eyes and ≤ 1.174 midway (≤ 1.195 and ≤ 1.257 for any one of seeds 1–12); 1.376 with "world" at half its depth spread (at its antipode), up to 1.78 with the later five at a third of theirs and up to 1.78 without density compensation, up to 2.59 with flat text
 const MAX_SMEAR_E_IOU = 0.25;    // hello world's text layer at az+25 vs its E strokes: 0.096 real, 0.107 flat text (a coarse guard; the seed check tells them apart)
 const MAX_SMEAR_SEED_IOU = 0.3;  // that text layer, seed vs seed: 0.167 real; 0.839 flat text, 1.000 when the seed is ignored
-const LIGHT_BAND = [0.93, 1.05]; // text / as-ambient light of the same particles: 0.955–1.015 real (seeds 1–6, every alike view, t 0; 0.970–1.013 for seed 1 at t 0 and 7.3), lowest at the eyes, where the 8-bit target clips the densest strokes (5–7% of the text layer's lit pixels); 0.910 at E without density compensation. 1.174 at E with text 1.25× brighter near E, 1.209 at the eye of "a" with the same near "a", 1.456 with text sprites 1.25× wider, 1.123 with their blur cut 75%, 1.287 with text 1.4× brighter everywhere
-const CHANNEL_BAND = [0.97, 1.03]; // text / as-ambient colour balance (each channel's share of the light over pixels where no channel clips) in each of red, green and blue: 0.998–1.001 real (seeds 1–6, every alike view, t 0), where the raw per-channel ratio falls to 0.909 in blue at E from clipping alone; 0.733/1.102/0.735 at E with a green tint near E (red and blue × 0.739, green × 1.10, R5-1) and 1.106/0.989/0.854 with a 30% gold tint near E
-const MAX_CLIPPED = 0.08;        // share of an image's lit pixels that the colour balance leaves out because a channel is at 255 (blue saturates first), text layer and as-ambient alike: ≤ 0.0692 and ≤ 0.0697 real (seeds 1–6, every alike view; 0.0622 for the text layer at E, whose left-out pixels hold 32% of its light); 0.109 at E with text particles tinted blue near E (blue × 1.5, red and green × 0.96), 0.116 without density compensation, 0.083 with upright letters in depth layers
+const LIGHT_BAND = [0.93, 1.05]; // text / as-ambient light of the same particles: 0.951–1.017 real (seeds 1–12, every alike view, t 0; 0.951–1.020 with t 7.3; 0.955–1.015 for seeds 1–6 at t 0; 0.970–1.013 for seed 1 at t 0 and 7.3), lowest at the eyes, where the 8-bit target clips the densest strokes (5–7.5% of the text layer's lit pixels); 0.910 at E without density compensation. 1.174 at E with text 1.25× brighter near E, 1.209 at the eye of "a" with the same near "a", 1.456 with text sprites 1.25× wider, 1.123 with their blur cut 75%, 1.287 with text 1.4× brighter everywhere
+const CHANNEL_BAND = [0.97, 1.03]; // text / as-ambient colour balance (each channel's share of the light over pixels where no channel clips) in each of red, green and blue: 0.998–1.002 real (seeds 1–12, every alike view and time), where the raw per-channel ratio falls to 0.909 in blue at E from clipping alone; 0.733/1.102/0.735 at E with a green tint near E (red and blue × 0.739, green × 1.10, R5-1) and 1.106/0.989/0.854 with a 30% gold tint near E
+const MAX_CLIPPED = 0.08;        // share of an image's lit pixels that the colour balance leaves out because a channel is at 255 (blue saturates first), text layer and as-ambient alike: ≤ 0.0746 and ≤ 0.0697 real (seeds 1–12, every alike view and time, the most at E for seed 8; ≤ 0.0692 and ≤ 0.0697 for seeds 1–6; 0.0622 for the text layer at E for seed 1, whose left-out pixels hold 32% of its light); 0.109 at E with text particles tinted blue near E (blue × 1.5, red and green × 0.96), 0.116 without density compensation, 0.083 with upright letters in depth layers. Changes that keep every particle alike trip it too: 0.081 at E with 60,000 particles and with a palette 20% brighter at every angle, 0.093 and 0.095 at the eye of "What", and up to 0.130 with every sprite 1.25× wider
 const OWN_BETA = 0.2;            // each message's own particles at its eye are compared at this beta: their strokes are sparse enough that few pixels clip (≤ 3.1% for hello world, ≤ 19% for "a", seeds 1–6), where at the default β ¼ to ⅓ of their lit pixels clip and the ratio falls to 0.85
-const OWN_LIGHT_BAND = [0.95, 1.12]; // a message's own text particles at its eye over the same particles drawn as ambient, at OWN_BETA: 1.009–1.057 real (six messages, seeds 1–6), above 1 because the as-ambient image is the dense cloud's difference and loses more to the 8-bit cap; 1.253 at the eye of "a" when only its particles brighten 1.25× near it, whose whole text layer there reads 0.991; 1.164 for "world" at half its depth spread, which brings its particles into focus, and 1.12–1.25 for the later five at a third of theirs
-const SIZE_BAND = [0.85, 1.15];  // text / as-ambient effective sprite area at SPARSE_BETA: 0.943–1.044 real (seeds 1–6, every alike view); 1.425 at E with text sprites 1.25× wider near E
-const MAX_RESIDUAL = 0.001;      // per channel, Σ|render − prediction| over the predicted light, for the shipped render against text layer + ambient layer − sky, and for each camera-mode shot against E set by URL: exactly 0 real (seeds 1–6, every alike view, t 0; seed 1 also at t 7.3; and every mode shot); worst channel 0.070 at E with a 30% gold tint near E in the shipped draw only and 0.124 with a second text pass there; in the mode shots 0.144 with text 1.25× brighter during the tour, late in its hold, after a glide or after 5 s idle at E, and 0.076 with a gold tint after a glide
-const SCENE_BAND = [0.85, 1.15]; // scene particle light at E, 3°, 12° and each other eye over its mean at the far views: 0.927–1.103 real (seeds 1–3, t 0); 1.265 at E with every particle 1.4× brighter near E, but 1.104 with 1.2× and 1.063 with 1.15×, which pass
+const OWN_LIGHT_BAND = [0.95, 1.12]; // a message's own text particles at its eye over the same particles drawn as ambient, at OWN_BETA: 1.006–1.065 real (six messages, seeds 1–12; 1.009–1.057 for seeds 1–6), above 1 because the as-ambient image is the dense cloud's difference and loses more to the 8-bit cap; 1.253 at the eye of "a" when only its particles brighten 1.25× near it, whose whole text layer there reads 0.991, and 0.875 when they dim to 0.85× (0.981); for seed 1 it passes one message's particles 6.1% ("beautiful") to 10.1% ("a") brighter and 6.8% (hello world) to 10.0% ("beautiful") dimmer; 1.164 for "world" at half its depth spread, which brings its particles into focus, and 1.12–1.25 for the later five at a third of theirs. Changes that keep every particle alike move it too: 1.125–1.166 with every sprite 1.25× wider, 1.046–1.100 with a palette 20% brighter at every angle
+const SIZE_BAND = [0.85, 1.15];  // text / as-ambient effective sprite area at SPARSE_BETA: 0.943–1.044 real (seeds 1–12, every alike view); 1.425 at E with text sprites 1.25× wider near E
+const MAX_RESIDUAL = 0.001;      // per channel, Σ|render − prediction| over the predicted light, for the shipped render against text layer + ambient layer − sky, and for each camera-mode shot against E set by URL: at most 1.3e-5 real for the shipped render (seeds 1–12, every alike view and time: 7–623 of a frame's 3,072,000 channel values off, by 1 level but for 31 values in all, under the hint's text, which is composited over the canvas) and exactly 0 in every mode shot; worst channel 0.070 at E with a 30% gold tint near E in the shipped draw only and 0.124 with a second text pass there; in the mode shots 0.144 with text 1.25× brighter during the tour, late in its hold, after a glide or after 5 s idle at E, and 0.076 with a gold tint after a glide
+const SCENE_BAND = [0.85, 1.15]; // scene particle light at E, 3°, 12° and each other eye over its mean at the far views: 0.926–1.104 real (seeds 1–12, t 0; 0.922–1.112 with t 7.3); 1.265 at E with every particle 1.4× brighter near E, but 1.104 with 1.2× and 1.063 with 1.15×, which pass
 // The scene's particle light changes slowly from view to view, 0.92–1.11× the far views' mean at the
-// alike views (seeds 1–6), which keeps SCENE_BAND wide. The two midpoints beside an eye, about 29°
+// alike views (seeds 1–12), which keeps SCENE_BAND wide. The two midpoints beside an eye, about 29°
 // away on the sequence's path, sit on either side of it, so their mean follows that slow change, and
 // a glow near the eye does not reach them.
-const SCENE_RING_BAND = [0.95, 1.03]; // scene particle light at each eye over its mean at the two midpoints beside it (t 0, seed 1): 0.976–1.003 real (six eyes, seeds 1–12; 0.980–1.001 for seeds 1–3); with every particle brighter near E, fading out by 12°, 1.114 at E for 1.15×, which every other check passes, and 1.158 for 1.2×; with every particle brighter near every eye, 1.025–1.048 for 5% and 1.070–1.094 for 10%, so a glow shows from 5.5% at E and from 3.1–4.8% at the other eyes
+const SCENE_RING_BAND = [0.95, 1.03]; // scene particle light at each eye over its mean at the two midpoints beside it (t 0, seed 1): 0.976–1.003 real (six eyes, seeds 1–12; 0.980–1.001 for seeds 1–3); with every particle brighter near E, fading out by 12°, 1.114 at E for 1.15×, which every other check passes, and 1.158 for 1.2×; with every particle brighter near every eye, 1.025–1.048 for 5% and 1.070–1.094 for 10%, so a glow shows from 5.5% at E and from 3.1–4.8% at the other eyes; 0.906 at the eye of "What" with every particle dimmed to 0.9× near it, where SCENE_BAND reads 0.924
 const DWELL_MS = 8000;           // idle at E after the glide before the second shot; the dwell mutant reveals after 5000
 // The tour at load starts at the shipped start view (no az or el). index.html: playSequence holds
 // LOAD_HOLD_MS (1.5 s) there, glides to hello world's eye in legMs(42.2°) = 1.5 s + 50 ms per degree

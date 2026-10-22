@@ -17,13 +17,15 @@
 // description and a name that says what it shows and how to steer; the page draws at most PARTICLES
 // particles, all that it reports, and at 1920×1080 and DPR 2 its sprites cover at most MAX_OVERDRAW×
 // the screen's pixels at the start view and at each of the six eyes (default zoom, t 0), read from
-// the point sizes the GPU itself computes (transform feedback); without WebGL2 a message shows
+// the point sizes the GPU itself computes (transform feedback) at each drawArrays point draw, with
+// the state that draw has (F77); without WebGL2 a message shows
 // and the page never reports ready. Each page's context is closed as soon as its check is done.
 // The timing check never runs beside the illusion file's renders or the sequence file's pages:
 // npm test and tests/mutate.mjs run each of those first, in a phase of its own (tests/lib/phases.mjs).
 // Does not prove other browsers, real GPUs or the frame rate they reach (the particle and fill
 // budget stands in for it: a real GPU may cap point sizes lower, and shading costs differ), the fill
-// at other zooms (about 13.6× the screen at the closest zoom at E) or views, DM Mono's own widths
+// at other zooms (about 13.6× the screen at the closest zoom at E) or views, or of points drawn
+// other than with drawArrays (drawElements or instanced draws are not measured), DM Mono's own widths
 // (its file is not available offline; the stand-in assumes 0.600 em), fonts loading over a real
 // network, or how a screen
 // reader behaves with the canvas (none is available here; the role is what tells NVDA and JAWS
@@ -152,63 +154,77 @@ const PARTICLES = 48000;
 const MAX_OVERDRAW = 3;          // sprite fragments per frame over the screen's pixels at 3840×2160 device px, default zoom: 2.72–2.95 measured at the start view and the six eyes; sprites on squares 1.25× wider cover about 1.56× that
 // Reads the point sizes the GPU computes, through transform feedback. Before the page's scripts run
 // it adds gl_Position and gl_PointSize as transform-feedback outputs of the programs that set
-// gl_PointSize, records the point draws of each frame (a frame starts with the sky's draw, the first
-// that is not of points), and skips every draw the page makes, so the page keeps setting its
-// uniforms each frame but costs nothing at 3840×2160. measure() replays the last frame's point draws
-// with the rasterizer off and sums each sprite's square, clipped to the screen.
+// gl_PointSize and skips every draw the page makes, so the page keeps setting its state each frame
+// but costs nothing at 3840×2160. measure() marks the next frame (a frame starts with the sky's
+// draw, the first that is not of points). Each drawArrays point draw of that frame made with such a
+// program is measured where the page makes it, with the rasterizer off and the program, vertex array
+// and uniforms the draw has then. So a draw that raises a sizing uniform and restores it after is
+// measured at the size it draws; replaying the frame's draws later measured it with the restored
+// value (review round 1, F77). Each sprite's square is summed, clipped to the screen.
 const FILL_PROBE = () => {
   const G = WebGL2RenderingContext.prototype;
-  const { shaderSource, attachShader, linkProgram, drawArrays, useProgram, bindVertexArray } = G;
+  const { shaderSource, attachShader, linkProgram, drawArrays, useProgram } = G;
   const sizedShaders = new WeakSet(), sized = new WeakSet();
-  const s = window.__fill = { gl: null, frame: [], next: [], used: null, usedVao: null };
+  const s = window.__fill = { used: null, armed: false, frame: null, done: null };
   G.shaderSource = function (sh, src) { if (/gl_PointSize/.test(src)) sizedShaders.add(sh); return shaderSource.call(this, sh, src); };
   G.attachShader = function (p, sh) { if (sizedShaders.has(sh)) sized.add(p); return attachShader.call(this, p, sh); };
   G.linkProgram = function (p) { if (sized.has(p)) this.transformFeedbackVaryings(p, ['gl_Position', 'gl_PointSize'], this.INTERLEAVED_ATTRIBS); return linkProgram.call(this, p); };
   G.useProgram = function (p) { s.used = p; return useProgram.call(this, p); };
-  G.bindVertexArray = function (v) { s.usedVao = v; return bindVertexArray.call(this, v); };
-  G.drawArrays = function (mode, first, count) {
-    if (mode !== this.POINTS) { if (s.next.length) s.frame = s.next; s.next = []; return; }
-    if (sized.has(s.used)) { s.gl = this; s.next.push({ program: s.used, vao: s.usedVao, first, count }); }
-  };
-  s.measure = () => {
-    const gl = s.gl, draws = s.next.length ? s.next : s.frame;
-    if (!gl || !draws.length) throw new Error('the page made no point draw with a program that sets gl_PointSize');
+  // One point draw with the state the page has set for it: its program, vertex array and uniforms.
+  const measureDraw = (gl, first, count) => {
     const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight;
-    let n = 0, fill = 0, sum = 0, largest = 0;
-    for (const d of draws) {
-      const buf = gl.createBuffer(), tf = gl.createTransformFeedback();
-      gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, buf);
-      gl.bufferData(gl.TRANSFORM_FEEDBACK_BUFFER, d.count * 20, gl.STREAM_READ);
-      gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, null);
-      gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
-      gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, buf);
-      useProgram.call(gl, d.program);
-      bindVertexArray.call(gl, d.vao);
-      gl.enable(gl.RASTERIZER_DISCARD);
-      gl.beginTransformFeedback(gl.POINTS);
-      drawArrays.call(gl, gl.POINTS, d.first, d.count);
-      gl.endTransformFeedback();
-      gl.disable(gl.RASTERIZER_DISCARD);
-      bindVertexArray.call(gl, null);
-      gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, null);
-      gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
-      const out = new Float32Array(d.count * 5);
-      gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, buf);
-      gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER, 0, out);
-      gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, null);
-      gl.deleteBuffer(buf);
-      gl.deleteTransformFeedback(tf);
-      n += d.count;
-      for (let i = 0; i < d.count; i++) {
-        const [x, y, z, w, q] = out.subarray(i * 5, i * 5 + 5);
-        sum += q * q;
-        largest = Math.max(largest, q);
-        if (!(w > 0) || z < -w || z > w) continue;   // outside the near or far plane
-        const cx = (x / w + 1) / 2 * W, cy = (y / w + 1) / 2 * H;
-        fill += Math.max(0, Math.min(W, cx + q / 2) - Math.max(0, cx - q / 2)) * Math.max(0, Math.min(H, cy + q / 2) - Math.max(0, cy - q / 2));
-      }
+    const buf = gl.createBuffer(), tf = gl.createTransformFeedback();
+    gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, buf);
+    gl.bufferData(gl.TRANSFORM_FEEDBACK_BUFFER, count * 20, gl.STREAM_READ);
+    gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, null);
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, buf);
+    gl.enable(gl.RASTERIZER_DISCARD);
+    gl.beginTransformFeedback(gl.POINTS);
+    drawArrays.call(gl, gl.POINTS, first, count);
+    gl.endTransformFeedback();
+    gl.disable(gl.RASTERIZER_DISCARD);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, null);
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+    const out = new Float32Array(count * 5);
+    gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, buf);
+    gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER, 0, out);
+    gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, null);
+    gl.deleteBuffer(buf);
+    gl.deleteTransformFeedback(tf);
+    let fill = 0, sum = 0, largest = 0;
+    for (let i = 0; i < count; i++) {
+      const [x, y, z, w, q] = out.subarray(i * 5, i * 5 + 5);
+      sum += q * q;
+      largest = Math.max(largest, q);
+      if (!(w > 0) || z < -w || z > w) continue;   // outside the near or far plane
+      const cx = (x / w + 1) / 2 * W, cy = (y / w + 1) / 2 * H;
+      fill += Math.max(0, Math.min(W, cx + q / 2) - Math.max(0, cx - q / 2)) * Math.max(0, Math.min(H, cy + q / 2) - Math.max(0, cy - q / 2));
     }
-    return { n, draws: draws.length, W, H, fill, sum, largest };
+    return { count, W, H, fill, sum, largest };
+  };
+  G.drawArrays = function (mode, first, count) {
+    if (mode !== this.POINTS) {
+      if (s.frame) { s.done = s.frame; s.frame = null; }
+      if (s.armed) { s.armed = false; s.frame = []; }
+      return;
+    }
+    if (s.frame && sized.has(s.used)) s.frame.push(measureDraw(this, first, count));
+  };
+  s.measure = async () => {
+    s.done = null; s.frame = null; s.armed = true;
+    for (const end = performance.now() + 10000; !s.done;) {
+      if (performance.now() > end) throw new Error('no frame was measured within 10 s of asking: the probe needs the page to draw a frame that starts with a draw not of points (the sky) and to start the next one the same way');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const draws = s.done;
+    if (!draws.length) throw new Error('the measured frame had no drawArrays point draw with a program that sets gl_PointSize, so there is no sprite fill to read');
+    const { W, H } = draws[0];
+    if (draws.some((d) => d.W !== W || d.H !== H)) throw new Error(`the measured frame's point draws went to drawing buffers of different sizes (${draws.map((d) => `${d.W}×${d.H}`).join(', ')}), so their fills cannot be added on one screen`);
+    const largest = Math.max(...draws.map((d) => d.largest));
+    if (!(largest > 0)) throw new Error(`transform feedback returned no point size above 0 px for the ${draws.length} measured draw(s), so the capture did not run`);
+    const add = (k) => draws.reduce((a, d) => a + d[k], 0);
+    return { n: add('count'), draws: draws.length, W, H, fill: add('fill'), sum: add('sum'), largest };
   };
 };
 
@@ -216,10 +232,12 @@ test('the particle count and the sprite fill stay within the budget the plan sta
   const views = [['the start view', 't=0&tour=0'], ...NAMES.map((name) => [`the eye of "${name}"`, `msg=${name}&t=0&tour=0`])];
   const broken = [];
   for (const [what, query] of views) {
-    const r = await withPage(query, { width: 1920, height: 1080, dpr: 2, initScript: FILL_PROBE }, ({ page }) => page.evaluate(() => ({ ...window.__fill.measure(), reported: window.__cloud.counts.text + window.__cloud.counts.ambient })));
+    // A probe that cannot measure throws a plain Error, never a failed check; it names the view here.
+    const r = await withPage(query, { width: 1920, height: 1080, dpr: 2, initScript: FILL_PROBE }, ({ page }) => page.evaluate(async () => ({ ...(await window.__fill.measure()), reported: window.__cloud.counts.text + window.__cloud.counts.ambient })))
+      .catch((err) => { throw new Error(`the budget probe could not measure ${what} (?${query}): ${err.message}`, { cause: err }); });
     const over = r.fill / (r.W * r.H);
     t.diagnostic(`${what}: ${r.n} particles drawn a frame in ${r.draws} draw(s), ${r.reported} reported; on ${r.W}×${r.H} px the sprites cover ${(r.fill / 1e6).toFixed(2)} M px, ${over.toFixed(3)}× the screen (${(r.sum / 1e6).toFixed(2)} M unclipped; largest sprite ${r.largest.toFixed(1)} px)`);
-    if (r.W !== 3840 || r.H !== 2160) throw new Error(`the page drew at ${r.W}×${r.H} device px, not the 3840×2160 that 1920×1080 at DPR 2 gives, so the fill is not measured where the budget is stated`);
+    if (r.W !== 3840 || r.H !== 2160) throw new Error(`at ${what} (?${query}) the page drew at ${r.W}×${r.H} device px, not the 3840×2160 that 1920×1080 at DPR 2 gives, so the fill is not measured where the budget is stated`);
     if (r.n !== r.reported) broken.push(`${what}: the page draws ${r.n} particles a frame (in ${r.draws} draw(s)) but reports ${r.reported} in window.__cloud.counts`);
     if (!(r.n <= PARTICLES)) broken.push(`${what}: the page draws ${r.n} particles a frame, more than the ${PARTICLES} of its budget`);
     if (!(over <= MAX_OVERDRAW)) broken.push(`${what}: the sprites cover ${over.toFixed(3)}× the screen's pixels at 1920×1080 and DPR 2 (${(r.fill / 1e6).toFixed(2)} M fragments a frame), more than the ${MAX_OVERDRAW}× of its budget`);
