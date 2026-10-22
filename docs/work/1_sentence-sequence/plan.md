@@ -171,8 +171,13 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
   - F72: should one recorded pass loop as a video without a jump? That needs the particles' drift to repeat once per pass.
   - F73: is the stillness of each message, seen from its own eye, an acceptable cue?
 - Leftover worktrees: `.claude/worktrees/nifty-bardeen-a20921` is the folder of a running fleet session ("Make fleet's drift gate work from linked worktrees"), and `.claude/worktrees/suspicious-wescoff-85e29d` is the folder of the archived fleet session that started it. Neither holds work-unit-1 work, so this unit leaves them to those sessions.
-- [ ] Review round 1 of the repairs; Claude lane only if the owner logs in again.
-- [ ] Full mutation proof on the final revision, the only browser workload while it runs.
+- [x] Review round 1 of repair round 1 (`8dc6893..6adc5b8`), both lanes on a clone of `6adc5b8`, 2026-10-22. Dispositions are in [reviews/1_integration.md](reviews/1_integration.md).
+  - 2 major and 8 minor findings, F77–F86. None is against the owner's rule; both lanes found the rendering ties intact.
+  - The full proof of `6adc5b8` was stopped after 17 of 116 mutants (all killed, control green), so that repair round 2 could run first.
+- [ ] Repair round 2, one worker at a time:
+  - [ ] R2a: F78–F81, F83, and F86's sequence checks.
+  - [ ] R2b: F77, F82, F84, F85, and F86's two lower edges.
+- [ ] Full mutation proof on the final revision, the only browser workload while it runs, beside review round 2.
 - [ ] Republish the artifact, then the devlog, Outcome and cleanup.
 
 ## Outcome
