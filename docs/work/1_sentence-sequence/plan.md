@@ -118,7 +118,9 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
   - W17 wrote the gates; W18 checked them against the brief, completed AGENTS.md and README.md, and changed no code.
   - `npm test`: 42 of 42 in four runs on these bytes (210.4, 179.5, 165.8 and 162.0 s).
   - Full mutation proof (2026-10-15): control green, 81 mutants (58 page, 23 tree), all killed.
-- [x] Review round 0 of the uncommitted page and gates, which `8dc6893` commits unchanged: Codex only, since the Claude lane's login had expired. It found 2 critical, 8 major and 2 minor issues. Dispositions F49–F61 are in [reviews/0_implementation.md](reviews/0_implementation.md): 12 accepted, F60 rejected.
+- [x] Review round 0 of the uncommitted page and gates, which `8dc6893` commits unchanged. Dispositions are in [reviews/0_implementation.md](reviews/0_implementation.md).
+  - Codex, 2026-10-21: 2 critical, 8 major and 2 minor; dispositions F49–F61, with F60 rejected.
+  - Claude, 2026-10-22, after the owner logged in again: 0 critical, 3 major and 12 minor; dispositions F62–F76. F67 was already resolved in R1a; F72 and F73 went to the owner.
 - [x] Coordinator's visual acceptance of `8dc6893`'s page, 2026-10-21.
   - Method: each PNG was opened at native resolution. Shots came from `scripts/shoot.mjs` (t 0, seed 1) and, for capture mode, the headless probe `tmp/accept/capture.mjs` (live clock). Rendering is deterministic: W18's own shots of the same views have the same sha256.
   - Criterion 1, met by looking: every message is clearly legible at its eye at 1280×800 and 390×844, and fits the frame at 390. sha256 prefixes:
@@ -137,10 +139,18 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
   - Criterion 5, by looking: in `#capture` the controls, readout, hint and cursor are hidden (computed styles).
     - Every hold reads under the live clock: hello world `10acbdb6`, face `9ea94ab7`, "What" `5b59fb74`, "a" `103f1451`, "beautiful" `a6bb55ea`, "world" `fb1746d7`.
     - The wrap glide shows a plain cloud (`7107e6a1`), and the loop is back at hello world after 44.2 s (`32857511`).
-- [ ] Repair round 1, one worker at a time:
-  - R1a, W19: F49, F50, F55–F59 and F61 (sequence, capture mode, page).
-  - R1b, W20: F51–F54 (illusion gates).
-  - Each milestone ends with three green runs, its new and touched mutants killed by name, and its own commit.
+- [ ] Repair round 1, one worker at a time. Each milestone ends with three green runs, its new and touched mutants killed by name, and its own commit.
+  - [x] R1a, W19: F49, F50, F55–F59 and F61 (sequence, capture mode, page), committed as `2748bef` on 2026-10-22, on top of the owner's canon sync `850af3b`.
+    - `npm test`: 45 of 45 in three runs (153.6–158.9 s).
+    - 14 named mutants, 10 of them new: all killed by checks after a green control (2,532 s).
+    - Rendering unchanged: 27 of 27 acceptance digests are identical.
+    - Beyond the brief: the sequence file runs in its own phase, after a font-hang flake beside it. A hold's last 100 ms may name the next message, and must name exactly that one.
+  - [ ] R1b, W20: F51–F54, with F63 and F64 folded in (illusion gates).
+  - [ ] R1c: F62, F65, F66, F68–F71 and F74–F76, plus F72 if the owner wants a loopable clip.
+- Owner questions, 2026-10-22:
+  - F72: should one recorded pass loop as a video without a jump? That needs the particles' drift to repeat once per pass.
+  - F73: is the stillness of each message, seen from its own eye, an acceptable cue?
+- Leftover worktrees: `.claude/worktrees/nifty-bardeen-a20921` is the folder of a running fleet session ("Make fleet's drift gate work from linked worktrees"), and `.claude/worktrees/suspicious-wescoff-85e29d` is the folder of the archived fleet session that started it. Neither holds work-unit-1 work, so this unit leaves them to those sessions.
 - [ ] Review round 1 of the repairs; Claude lane only if the owner logs in again.
 - [ ] Full mutation proof on the final revision, the only browser workload while it runs.
 - [ ] Republish the artifact, then the devlog, Outcome and cleanup.
