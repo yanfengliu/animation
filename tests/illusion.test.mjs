@@ -47,7 +47,9 @@
 //   channel by channel, capped at 255 as the 8-bit target caps it (residual at most 0.1% of their
 //   light in each channel; exactly 0 measured), so the shipped draw is the one those comparisons
 //   measured and any effect it alone has (light, colour, size or focus) shows; and the scene's
-//   particle light at E, 3°, 12° and every other eye is within 15% of its mean over the far views;
+//   particle light at E, 3°, 12° and every other eye is within 15% of its mean over the far views,
+//   and at each eye (t 0) within SCENE_RING_BAND of its mean at the two midpoints beside it, which
+//   follow the light's slow change from view to view, so a whole-scene glow near an eye shows;
 // - the camera's modes and time spent at E do not change the picture: E reached by "Find the angle"
 //   (a real click and the glide), shot on arrival and again after 8 s idle there, and E held by the
 //   tour at load started from the shipped start view, shot at least 1.5 s into its 3 s hold at E
@@ -84,18 +86,20 @@
 // colour shift of up to 3% in a channel or a size change of up to 15%, which the bands pass; a colour
 // change in the pixels the colour check leaves out (at most MAX_CLIPPED of each image's lit pixels,
 // but at E they hold 32% of the text layer's light), or one confined to one message's particles,
-// whose share of the whole text layer dilutes it (only their light is compared on its own). Nor does
-// it hold β at 0.85 (review round 3, F25; the lesson is in docs/learning/lessons.md).
+// whose share of the whole text layer dilutes it (only their light is compared on its own); a
+// whole-scene glow near an eye below 5.5% at E or 3.1–4.8% at the other eyes (for a glow that fades
+// out by 12°), or a wider one as far as it lights the midpoints beside the eye too.
+// Nor does it hold β at 0.85 (review round 3, F25; the lesson is in docs/learning/lessons.md).
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startBrowser, newContext, render, waitFrames, state, until, sleep, PAGE_URL } from './lib/harness.mjs';
-import { decodePng, luminance, lumOver, strokeMask, strokeGapRatio, iou, scaleMask, lineLayout, unslant, edgeLean, lightOver, balanceOver, partsResidual, streakResidual } from './lib/image.mjs';
+import { decodePng, crop, luminance, lumOver, strokeMask, strokeGapRatio, iou, scaleMask, lineLayout, unslant, edgeLean, lightOver, balanceOver, partsResidual, streakResidual } from './lib/image.mjs';
 import { MESSAGES, midpoint } from './lib/messages.mjs';
 
 // Thresholds, each set from the real page and the mutants in tests/mutate.mjs (comments give the
 // measured values, real page first, at 1280×800 and seed 1 unless named).
-const MIN_RATIO = 1.5;           // stroke/gap luminance at each eye: 1.551–2.082 real (six messages, seeds 1–12, both viewports; ≥ 1.698 for seed 1); 1.344–1.491 β 0.2, 1.304–1.472 "What" formed 6° off its eye
-const MIN_LIFT = 1.45;           // that ratio over the beta-0 render's on the same mask: 1.532–2.046 real (six messages, seeds 1–12, both viewports); 1.334–1.453 β 0.2, 1.184–1.294 "What" 6° off, 1.029–1.133 no relocation, 1.222–1.424 for "What", "a", "beautiful" and "world" without density compensation (at about the page's particle counts)
+const MIN_RATIO = 1.5;           // stroke/gap luminance at each eye: 1.551–2.082 real (six messages, seeds 1–12, both viewports; ≥ 1.698 for seed 1); 1.406–1.528 β 0.2 for seed 1 with hello world's t, fov and readback views (1.309–1.601 over seeds 1–12, so MIN_LIFT is the bound that holds it), 1.304–1.472 "What" formed 6° off its eye
+const MIN_LIFT = 1.51;           // that ratio over the beta-0 render's on the same mask: 1.532–2.046 real (six messages, seeds 1–12, both viewports; ≥ 1.656 for seed 1 with hello world's t, fov and readback views); 1.308–1.498 β 0.2 (≤ 1.453 for seed 1), 1.184–1.294 "What" 6° off, 1.029–1.133 no relocation, 1.222–1.424 for "What", "a", "beautiful" and "world" without density compensation (at about the page's particle counts)
 const MIN_SEED_IOU = 0.65;       // strokes, default seed vs OTHER_SEED: 0.777–0.912 real (six messages, seeds 1–12 but 8, both viewports); 0.503–0.545 "What" 6° off, 0.238–0.413 no relocation
 const MIN_MASK = { strokes: 3000, gaps: 1500 }; // pixels a mask needs to be measured: ≥ 3942 strokes ("a") and ≥ 2396 gaps ("beautiful") at 390×844 real (seeds 1–12)
 const MIN_TIME_IOU = 0.8;        // hello world's strokes t=0 vs later: 0.943 and 0.941 real (t 7.3 and 31); 0.531 when text particles drift across their sight lines
@@ -110,13 +114,18 @@ const OWN_BETA = 0.2;            // each message's own particles at its eye are 
 const OWN_LIGHT_BAND = [0.95, 1.12]; // a message's own text particles at its eye over the same particles drawn as ambient, at OWN_BETA: 1.009–1.057 real (six messages, seeds 1–6), above 1 because the as-ambient image is the dense cloud's difference and loses more to the 8-bit cap; 1.253 at the eye of "a" when only its particles brighten 1.25× near it, whose whole text layer there reads 0.991; 1.164 for "world" at half its depth spread, which brings its particles into focus, and 1.12–1.25 for the later five at a third of theirs
 const SIZE_BAND = [0.85, 1.15];  // text / as-ambient effective sprite area at SPARSE_BETA: 0.943–1.044 real (seeds 1–6, every alike view); 1.425 at E with text sprites 1.25× wider near E
 const MAX_RESIDUAL = 0.001;      // per channel, Σ|render − prediction| over the predicted light, for the shipped render against text layer + ambient layer − sky, and for each camera-mode shot against E set by URL: exactly 0 real (seeds 1–6, every alike view, t 0; seed 1 also at t 7.3; and every mode shot); worst channel 0.070 at E with a 30% gold tint near E in the shipped draw only and 0.124 with a second text pass there; in the mode shots 0.144 with text 1.25× brighter during the tour, late in its hold, after a glide or after 5 s idle at E, and 0.076 with a gold tint after a glide
-const SCENE_BAND = [0.85, 1.15]; // scene particle light at E, 3°, 12° and each other eye over its mean at the far views: 0.927–1.103 real (seeds 1–3, t 0); 1.265 at E with every particle 1.4× brighter near E
+const SCENE_BAND = [0.85, 1.15]; // scene particle light at E, 3°, 12° and each other eye over its mean at the far views: 0.927–1.103 real (seeds 1–3, t 0); 1.265 at E with every particle 1.4× brighter near E, but 1.104 with 1.2× and 1.063 with 1.15×, which pass
+// The scene's particle light changes slowly from view to view, 0.92–1.11× the far views' mean at the
+// alike views (seeds 1–6), which keeps SCENE_BAND wide. The two midpoints beside an eye, about 29°
+// away on the sequence's path, sit on either side of it, so their mean follows that slow change, and
+// a glow near the eye does not reach them.
+const SCENE_RING_BAND = [0.95, 1.03]; // scene particle light at each eye over its mean at the two midpoints beside it (t 0, seed 1): 0.976–1.003 real (six eyes, seeds 1–12; 0.980–1.001 for seeds 1–3); with every particle brighter near E, fading out by 12°, 1.114 at E for 1.15×, which every other check passes, and 1.158 for 1.2×; with every particle brighter near every eye, 1.025–1.048 for 5% and 1.070–1.094 for 10%, so a glow shows from 5.5% at E and from 3.1–4.8% at the other eyes
 const DWELL_MS = 8000;           // idle at E after the glide before the second shot; the dwell mutant reveals after 5000
 // The tour at load starts at the shipped start view (no az or el). index.html: playSequence holds
 // LOAD_HOLD_MS (1.5 s) there, glides to hello world's eye in legMs(42.2°) = 1.5 s + 50 ms per degree
 // (3.61 s), and holds HOLD_MS (3 s). Each step starts at the frame where the previous one ended, so
 // the camera is at E from about 5.11 s to about 8.11 s after the page's first frame.
-const TOUR_SHOT_MS = 6600;       // the earliest tour shot, from the page's first frame, and it waits until HOLD_LEAD_MS after the camera reached E if that is later: about 1.5 s into the hold. Run last with the render queue drained, the state reads and screenshot take about 0.8–1 s at 1280×800, so the shot ends about 0.6 s before the hold does; the late-in-hold mutant reveals once the hold has run 1.2 s
+const TOUR_SHOT_MS = 6600;       // the earliest tour shot, from the page's first frame, and it waits until HOLD_LEAD_MS after the camera reached E if that is later: about 1.5 s into the hold. Run last with the render queue drained, one state read, the screenshot clipped to the central region and a second state read take about 0.16–0.20 s at 1280×800, and the shot is decoded only after that, so the shot ends about 1.3 s before the hold does (0.33–0.40 s and about 1.1 s with the whole frame, four reads and the decode before the last two); the late-in-hold mutant reveals once the hold has run 1.2 s
 const HOLD_LEAD_MS = 1500;       // the shot must start at least this long after the camera reached E, as the page's own frames report it
 const MAX_STREAK_FLOOR = 1.9;    // the floor (mean row and column residual at the two far controls), mean over seeds 1–3: 1.286 real (1.308–1.383 in threes); 2.769 flat text
 const STREAK_K = 1.8;            // row and column residual over each seed's floor midway to hello world's neighbours and at its back view, mean: ≤ 1.33 real (≤ 1.52 in threes); 1.863 in the rows midway to the face when hello world takes twice the relocation chance (13,920 text particles, not 9,083); 1.78 slant-5 and 1.67 upright letters in the back view's columns
@@ -274,7 +283,7 @@ before(async () => {
     still: [wide, [SKY(E), ...['0', '7.3', '31'].map((t) => Q(E, { t, layer: 'text', textof: HW.name }))]],
     ghost: [wide, GHOSTS.flatMap(ghostViews)],
     smear: [wide, [Q(E, { layer: 'text', textof: HW.name }), SKY(E), Q(at(25, 0), { layer: 'text', textof: HW.name }), Q(at(25, 0), { seed: OTHER_SEED, layer: 'text', textof: HW.name })]],
-    alike: [wide, [...ALIKE_TIMES.flatMap((time) => ALIKE(time).flatMap(([, w]) => alikeViews(w, time, time === '0'))), ...MESSAGES.flatMap(ownViews)]],
+    alike: [wide, [...ALIKE_TIMES.flatMap((time) => ALIKE(time).flatMap(([, w]) => alikeViews(w, time, time === '0'))), ...MESSAGES.flatMap(ownViews), ...MIDS.flatMap((w) => [Q(w), SKY(w)])]],
     streak: [wide, SEEDS.flatMap((seed) => Object.values(STREAK).flat().flatMap(([, w]) => [Q(w, { seed }), Q(w, { seed, beta: 0 })]))],
     modes: [wide, [Q(E), SKY(E)]],
   };
@@ -329,10 +338,12 @@ test('legible at each eye at 390×844', async (t) => {
   assertNone(rows.flatMap(([name, L]) => illegible(name, L)));
 });
 
-// The layout comes from the page's glyph geometry in x-heights: "hello" is 4.55 wide and "world"
-// 5.42, both lines 1.71 tall (ascender 1.55 plus the 0.16 stroke). "h" opens the top line and "d"
-// closes the bottom line with full-height stems; "o" closes the top line and "w" opens the bottom
-// line at x-height only (about 0.6 and 0.4 of the line height in a 0.15-line-height strip). The
+// The layout comes from the page's glyph geometry in x-heights: the centre lines of "hello" and
+// "world" are 4.55 and 5.42 wide, and each line's ink is 1.63 tall (ascender 1.55 plus the stroke,
+// INK = 0.2 world units, which is 0.075 x-heights at hello world's 2.65 units per x-height), so the
+// top line's ink is 0.84 of the bottom's. "h" opens the top line and "d" closes the bottom line
+// with full-height stems; "o" closes the top line and "w" opens the bottom line at x-height only
+// (0.54 and 0.44 of the line height measured in a strip 0.15 line heights wide). The
 // letters lean right by SLANT_DEG, so the strokes are measured with that lean undone: then the
 // stems stand upright in their end strips, while letters that lean the other way (a mirrored
 // frame) leave those strips short. The stems' own lean is then measured along the outer ink edge
@@ -524,10 +535,19 @@ test('every particle renders alike at every angle: no reveal near any eye', asyn
   }
   const own = [];
   for (const m of MESSAGES) own.push({ name: `"${m.name}" at its eye`, light: await ownBothWays(m) });
+  // Each eye's scene light over its mean at the two midpoints beside it (t 0, seed 1).
+  const sceneAt = async (w) => lightOver((await view(wide, Q(w))).img, (await view(wide, SKY(w))).img).light;
+  const ring = [];
+  for (const [k, m] of MESSAGES.entries()) {
+    const beside = [MIDS[(k + MESSAGES.length - 1) % MESSAGES.length], MIDS[k]];
+    ring.push({ name: `"${m.name}" at its eye`, scene: (await sceneAt(m)) / mean(await Promise.all(beside.map(sceneAt))) });
+  }
   for (const r of rows) t.diagnostic(`${r.name}: text/as-ambient light ${r.light.toFixed(3)}, colour balance r/g/b ${rgb(r.channels)} (clipped pixels left out: ${(100 * r.clipped[0]).toFixed(1)}% of the text layer's, holding ${(100 * r.clippedLight[0]).toFixed(1)}% of its light, and ${(100 * r.clipped[1]).toFixed(1)}% of the as-ambient's, holding ${(100 * r.clippedLight[1]).toFixed(1)}%)${r.size === undefined ? '' : `, sprite size ratio (beta ${SPARSE_BETA}) ${r.size.toFixed(3)}`}, shipped − (text + ambient − sky) residual r/g/b ${rgb(r.identity.abs)} (signed ${rgb(r.identity.signed)}, ${(100 * r.identity.off).toFixed(3)}% of pixels off by more than 2 levels), scene light / far mean ${r.scene.toFixed(3)}`);
   t.diagnostic(`each message's own particles at its eye, text/as-ambient light at beta ${OWN_BETA}: ${own.map((r) => `${r.name} ${r.light.toFixed(3)}`).join(', ')}`);
+  t.diagnostic(`scene light at each eye over its mean at the two midpoints beside it (t 0): ${ring.map((r) => `${r.name} ${r.scene.toFixed(4)}`).join(', ')}`);
   // Every broken bound is named in one message, so a failure shows each way the particles differ.
   const broken = [];
+  for (const r of ring) if (!(r.scene >= SCENE_RING_BAND[0] && r.scene <= SCENE_RING_BAND[1])) broken.push(`${r.name}: the scene's particle light is ${r.scene.toFixed(3)}× its mean at the two midpoints beside that eye (must be within ${SCENE_RING_BAND.join('–')}), so the whole cloud glows ${r.scene > 1 ? 'brighter' : 'dimmer'} as the camera nears it`);
   for (const r of own) if (!(r.light >= OWN_LIGHT_BAND[0] && r.light <= OWN_LIGHT_BAND[1])) broken.push(`${r.name}: that message's own text particles carry ${r.light.toFixed(3)}× the light of the same particles drawn as ambient at beta ${OWN_BETA} (must be within ${OWN_LIGHT_BAND.join('–')})`);
   for (const r of rows) {
     if (!(r.light >= LIGHT_BAND[0] && r.light <= LIGHT_BAND[1])) broken.push(`${r.name}: the text particles carry ${r.light.toFixed(3)}× the light of the same particles drawn as ambient (must be within ${LIGHT_BAND.join('–')})`);
@@ -599,14 +619,20 @@ test('the same seed builds the same cloud; another seed a different one', async 
 //   miss fails the test.
 // Each shot is compared with E set by URL (t 0, the clock frozen), and the dwell shot also with
 // the arrival shot, pixel by pixel and channel by channel over the central region, clear of the
-// bar and the hint.
+// bar and the hint. Every shot is clipped to that region, which halves the screenshot's cost, and
+// the tour's state is read once before its shot and once after it, with the decode after the
+// second read, so the shot ends about 1.3 s before the hold does (see TOUR_SHOT_MS).
 test('E reached by "Find the angle", then idle there, or held by the tour renders as E set by URL, pixel for pixel', async (t) => {
   await need(P.modes);
   await quiet();
   try {
-    const sky = (await view(wide, SKY(E))).img;
-    const byUrl = (await view(wide, Q(E))).img;
-    const shoot = async (page) => decodePng(await page.screenshot({ animations: 'disabled' }));
+    // CENTRE in the pixels of a 1280×800 view, rounded as partsResidual rounds a region.
+    const [x0, x1, y0, y1] = [Math.round(CENTRE[0] * 1280), Math.round(CENTRE[1] * 1280), Math.round(CENTRE[2] * 800), Math.round(CENTRE[3] * 800)];
+    const CLIP = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+    const sky = crop((await view(wide, SKY(E))).img, CLIP);
+    const byUrl = crop((await view(wide, Q(E))).img, CLIP);
+    const shot = (page) => page.screenshot({ animations: 'disabled', clip: CLIP });
+    const shoot = async (page) => decodePng(await shot(page));
     const glide = async () => {
       const page = await wides[1].newPage();
       try {
@@ -637,19 +663,24 @@ test('E reached by "Find the angle", then idle there, or held by the tour render
         });
         await page.goto(`${PAGE_URL}?t=0`);
         await waitFrames(page, 1);
-        const since = () => page.evaluate(() => performance.now() - window.__firstFrame);
+        // In one call: what state() reports, the time since the first frame and when the camera
+        // reached E (null until it has).
+        const read = () => page.evaluate(() => {
+          const c = window.__cloud, v = c.view();
+          return { s: { az: v.az, el: v.el, fov: v.fov, align: c.alignment(), mode: c.mode(), frame: c.frame }, at: performance.now() - window.__firstFrame, atE: window.__atE ?? null };
+        });
         // Shoot at TOUR_SHOT_MS, or HOLD_LEAD_MS after the camera reached E if that is later; a page
         // that never reaches E is shot 5 s after TOUR_SHOT_MS and fails below.
         for (;;) {
-          const now = await since(), atE = await page.evaluate(() => window.__atE ?? null);
+          const { at: now, atE } = await read();
           const left = Math.max(TOUR_SHOT_MS - now, atE === null ? TOUR_SHOT_MS + 5000 - now : atE + HOLD_LEAD_MS - now);
           if (left <= 0) break;
           await sleep(Math.min(left, 200));
         }
-        const s0 = await state(page), from = await since();
-        const img = await shoot(page);
-        const s = await state(page), to = await since();
-        return { img, s0, s, from, to, atE: await page.evaluate(() => window.__atE ?? null) };
+        const before = await read();
+        const png = await shot(page);
+        const after = await read();
+        return { img: decodePng(png), s0: before.s, s: after.s, from: before.at, to: after.at, atE: after.atE };
       } finally { await page.close(); }
     };
     const held = (s, mode) => s.mode === mode && s.align < 1e-6;
@@ -671,7 +702,7 @@ test('E reached by "Find the angle", then idle there, or held by the tour render
       [`the glide after ${idle} at E`, g.dwell.img, byUrl, 'E set by URL'],
       [`the glide after ${idle} at E`, g.dwell.img, g.arrived.img, 'the same page on arrival'],
       [`the tour ${span}`, h.img, byUrl, 'E set by URL'],
-    ].map(([name, img, ref, against]) => ({ name, against, d: partsResidual(img, sky, [ref], { region: CENTRE }) }));
+    ].map(([name, img, ref, against]) => ({ name, against, d: partsResidual(img, sky, [ref]) }));
     const show = (s) => `${s.mode}, ${s.align.toFixed(6)}° from E`;
     t.diagnostic(`glide: on arrival ${show(g.arrived.s)}; after ${idle} ${show(g.dwell.s0)} → ${show(g.dwell.s)}. Tour (attempt ${h === first ? 1 : 2}): ${h.atE === null ? 'never reported at E' : `at E from ${ms(h.atE)}`}; shot ${span}${h.atE === null ? '' : `, ${ms(h.from - h.atE)} into the hold and ${ms(h.atE + 3000 - h.to)} before its 3 s end`}, reads and screenshot ${ms(h.to - h.from)}; ${show(h.s0)} → ${show(h.s)}`);
     for (const r of rows) t.diagnostic(`${r.name} against ${r.against}: central residual r/g/b ${rgb(r.d.abs)} (signed ${rgb(r.d.signed)}; ${(100 * r.d.off).toFixed(3)}% of pixels off by more than 2 levels)`);

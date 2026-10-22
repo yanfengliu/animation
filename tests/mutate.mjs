@@ -261,6 +261,16 @@ const PAGE_MUTANTS = [
     edits: [['const N_TOTAL = 48000,', 'const N_TOTAL = 60000,']] },
   { name: 'bigger-sprites', defect: 'every sprite is drawn on a square 1.25× wider, so the sprites cover about 1.56× as many pixels (F76)',
     edits: [['gl_PointSize = quad;', 'gl_PointSize = quad * 1.25;']] },
+  // Repair round 1 (R1d): the illusion gates.
+  // At 1.2× the 8-bit cap would also catch it at E (8.1% of the text layer's lit pixels clip there,
+  // against MAX_CLIPPED 8%), so the mutant would still die without the scene-light check at the eyes.
+  { name: 'scene-glows-a-little', defect: 'every particle brightens near E, up to 1.15× at E and fading out by 12°, a whole-scene glow that every other check passes: the band over the far views reads 1.063 at E, and 7.7% of the text layer\'s lit pixels clip there (F68)',
+    edits: [NEAR_UNIFORM, NEAR_SET, [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.15 * u_near));']] },
+  // Killed by the checks that read a message's own text layer at its eye: legibility at each eye
+  // (seed IoU and lift), the layout at E, the fit at 390×844, the stillness at E and each message's
+  // own light at its eye (F70). The hiding check, which reads the layers away from the eyes, passes it.
+  { name: 'textof-ignored', defect: 'textof=<name> is ignored, so a message\'s text layer draws every message\'s text particles (F70)',
+    edits: [["const textOf = layer === 'text' ? M.findIndex((m) => m.name === params.get('textof')) : -1;", 'const textOf = -1;']] },
 ];
 
 // The hygiene gate scans text, including this file, so the defects below are assembled from

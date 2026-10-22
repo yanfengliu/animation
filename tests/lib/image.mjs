@@ -253,6 +253,15 @@ export function lightOver(img, base, region = [0, 1, 0, 1]) {
   return { r, g, b: bl, light: L, warmth: (r - bl) / (r + bl), area: L2 ? (L * L) / L2 : NaN };
 }
 
+// The pixels of `img` inside the rectangle { x, y, width, height } (whole pixels), as an image of
+// that size, as a screenshot clipped to that rectangle gives them.
+export function crop(img, { x, y, width, height }) {
+  if (!(x >= 0 && y >= 0 && width > 0 && height > 0 && x + width <= img.width && y + height <= img.height)) throw new Error(`crop: a ${width}×${height} rectangle at (${x}, ${y}) does not fit in the ${img.width}×${img.height} image`);
+  const rgb = new Uint8Array(width * height * 3);
+  for (let r = 0; r < height; r++) rgb.set(img.rgb.subarray(((y + r) * img.width + x) * 3, ((y + r) * img.width + x + width) * 3), r * width * 3);
+  return { width, height, rgb };
+}
+
 // How far `img` is, pixel by pixel and channel by channel, from what its parts predict: renders
 // of the same view over the same `base` (the sky alone), each holding part of img's light. The
 // prediction is Σ parts − (n − 1)·base, capped at 255 as the 8-bit target caps it (unless `clip`
