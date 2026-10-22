@@ -39,7 +39,8 @@
     left: max(var(--gutter), env(safe-area-inset-left));
     right: max(var(--gutter), env(safe-area-inset-right));
   }
-  #readout { font: 400 12px/1.2 var(--font-mono); letter-spacing: .08em; color: var(--ink-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* When a narrow screen and a wide font leave too little room, the readout gives way to the buttons. */
+  #readout { font: 400 12px/1.2 var(--font-mono); letter-spacing: .08em; color: var(--ink-muted); white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .actions { display: flex; gap: 8px; }
   .actions button {
     pointer-events: auto; cursor: pointer; white-space: nowrap; min-height: 40px; padding: 0 16px;
@@ -901,6 +902,12 @@ function setCapture(on) {
   canvas.classList.remove('grabbing');
   if (on) { autoplayed = true; playSequence({ hold: CAPTURE_HOLD_MS, loop: true }); }
 }
+// Escape also takes the bare #capture anchor out of the address, without a reload, so adding it
+// again starts capture mode again. A host that blocks history changes keeps the anchor.
+function dropCaptureAnchor() {
+  if (location.hash !== '#capture') return;
+  try { history.replaceState(history.state, '', location.href.replace(/#.*$/, '')); } catch { /* the host blocks history changes */ }
+}
 
 function stepCamera(now, dt) {
   if (mode === 'inertia') {
@@ -1006,7 +1013,7 @@ window.addEventListener('wheel', (e) => {
 
 window.addEventListener('keydown', (e) => {
   if (capture) {
-    if (e.key === 'Escape') { e.preventDefault(); noteInput(); setCapture(false); }
+    if (e.key === 'Escape') { e.preventDefault(); noteInput(); setCapture(false); dropCaptureAnchor(); }
     return;
   }
   if (e.altKey || e.ctrlKey || e.metaKey) return;

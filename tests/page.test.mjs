@@ -1,24 +1,38 @@
 // Gate: the page as a page.
-// Bound: headless Chromium with SwiftShader WebGL2; the page opened from disk with the listed
-// query strings and viewports; the Google Fonts stylesheet answered with empty CSS. Proves: those
+// Bound: headless Chromium with SwiftShader WebGL2 on Windows, whose local fonts the 390 px check
+// reads (Courier New for the stand-ins below, and the browser's monospace fallback); the page opened
+// from disk with the listed query strings and viewports; the Google Fonts stylesheet answered with
+// empty CSS, or with the stand-in faces below. Proves: those
 // loads (including the default tour, a "Find the angle" glide, both layers and one message's text
 // layer at its eye) log no console errors and no page errors; the only request leaving the page is the Google Fonts stylesheet,
 // and if that stylesheet never answers the page still draws, within 2 s of the time the same load
 // takes with it answered (the two loads started together in one browser, each timed to its first
-// frame); nothing overflows horizontally at 390 px; Tab reaches the canvas and then "Find the
+// frame); at 390 px nothing overflows horizontally, at the start view and with the widest readout
+// the page shows ("AZ 180.1° · EL -70.0°", 21 characters): with the fallback font and with a 0.600 em
+// stand-in for the web font, DM Mono, the readout shows whole beside the buttons, and with a 0.660 em
+// font the buttons still stay inside the bar's 16 px gutters while the readout is cut short; Tab
+// reaches the canvas and then "Find the
 // angle", each with a focus style that changes pixels on screen, and keys work on the focused
 // canvas; Chromium's accessibility tree exposes the canvas as a focusable application with a role
-// description and a name that says what it shows and how to steer; without WebGL2 a message shows
+// description and a name that says what it shows and how to steer; the page draws at most PARTICLES
+// particles, all that it reports, and at 1920×1080 and DPR 2 its sprites cover at most MAX_OVERDRAW×
+// the screen's pixels at the start view and at each of the six eyes (default zoom, t 0), read from
+// the point sizes the GPU itself computes (transform feedback); without WebGL2 a message shows
 // and the page never reports ready. Each page's context is closed as soon as its check is done.
 // The timing check never runs beside the illusion file's renders or the sequence file's pages:
 // npm test and tests/mutate.mjs run each of those first, in a phase of its own (tests/lib/phases.mjs).
-// Does not prove other browsers, real GPUs, fonts loading over a real network, or how a screen
+// Does not prove other browsers, real GPUs or the frame rate they reach (the particle and fill
+// budget stands in for it: a real GPU may cap point sizes lower, and shading costs differ), the fill
+// at other zooms (about 13.6× the screen at the closest zoom at E) or views, DM Mono's own widths
+// (its file is not available offline; the stand-in assumes 0.600 em), fonts loading over a real
+// network, or how a screen
 // reader behaves with the canvas (none is available here; the role is what tells NVDA and JAWS
 // to pass the arrow keys through).
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startBrowser, openPage, waitFrames, sleep, PAGE_URL, FONT_CSS } from './lib/harness.mjs';
 import { decodePng } from './lib/image.mjs';
+import { NAMES } from './lib/messages.mjs';
 
 const PHONE = { width: 390, height: 844, dpr: 2, isMobile: true, hasTouch: true };
 let browser;
@@ -64,19 +78,153 @@ test('the only request leaving the page is the Google Fonts stylesheet', async (
   assert.deepEqual(other, [], 'the page made requests other than itself and the Google Fonts stylesheet');
 });
 
-test('nothing overflows horizontally at 390 px', async (t) => {
-  const r = await withPage('tour=0', PHONE, ({ page }) => page.evaluate(() => {
-    const vw = document.documentElement.clientWidth;
-    const wide = [...document.querySelectorAll('body *')].filter((el) => {
-      const b = el.getBoundingClientRect();
-      return b.width > 0 && b.height > 0 && (b.right > vw + 0.5 || b.left < -0.5);
-    }).map((el) => `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''} [${Math.round(el.getBoundingClientRect().left)}, ${Math.round(el.getBoundingClientRect().right)}]`);
-    return { vw, inner: innerWidth, scroll: document.documentElement.scrollWidth, body: document.body.scrollWidth, wide };
-  }));
-  t.diagnostic(JSON.stringify(r));
-  assert.equal(r.vw, 390, `the layout viewport is ${r.vw} px wide, not 390`);
-  assert.ok(r.scroll <= r.vw && r.body <= r.vw, `the document scrolls sideways: scrollWidth ${r.scroll} px (body ${r.body} px) in a ${r.vw} px viewport`);
-  assert.deepEqual(r.wide, [], 'elements reach past the viewport edges');
+// The page's web font, DM Mono, comes from the Google Fonts stylesheet, which no gate fetches, and its
+// own file is not available offline. So the stylesheet is answered with stand-ins: a face named
+// "DM Mono" for weights 400 and 500 from the local Courier New, whose characters are 0.600 em wide,
+// as most monospace fonts' are; and the same 10% wider (0.660 em), wider than the bar has room for.
+const monoFace = (extra = '') => ['400', '500'].map((w) => `@font-face { font-family: "DM Mono"; font-weight: ${w}; src: local("Courier New"); ${extra} }`).join('\n');
+const FONTS = [
+  { font: 'the fallback font', fonts: 'empty', em: null, whole: true },
+  { font: 'a 0.600 em stand-in for DM Mono', fonts: { css: monoFace() }, em: 0.6, whole: true },
+  { font: 'a 0.660 em font', fonts: { css: monoFace('size-adjust: 110%;') }, em: 0.66, whole: false },
+];
+// The page's monospace font in em, from the width of ten zeros at 100 px.
+const MONO_EM = () => {
+  const probe = Object.assign(document.createElement('span'), { textContent: '0000000000' });
+  probe.style.cssText = 'position: absolute; visibility: hidden; white-space: pre; letter-spacing: 0; font: 400 100px/1 var(--font-mono)';
+  document.body.append(probe);
+  const em = probe.getBoundingClientRect().width / 1000;
+  probe.remove();
+  return em;
+};
+// What a 390 px layout puts where: elements past the viewport edges, the readout's text, and the left
+// and right edges of the bar, the readout's box and the two buttons. The readout's text may run past
+// its box: `whole` is whether it ends inside it, and `ink` is where it shows to, which is the box's
+// edge only when the box clips it.
+const LAYOUT = () => {
+  const vw = document.documentElement.clientWidth;
+  const wide = [...document.querySelectorAll('body *')].filter((el) => {
+    const b = el.getBoundingClientRect();
+    return b.width > 0 && b.height > 0 && (b.right > vw + 0.5 || b.left < -0.5);
+  }).map((el) => `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''} [${Math.round(el.getBoundingClientRect().left)}, ${Math.round(el.getBoundingClientRect().right)}]`);
+  const edges = (el) => { const b = el.getBoundingClientRect(); return [+b.left.toFixed(2), +b.right.toFixed(2)]; };
+  const ro = document.getElementById('readout'), box = edges(ro), range = document.createRange();
+  range.selectNodeContents(ro);
+  const textEnd = +range.getBoundingClientRect().right.toFixed(2), clips = ['hidden', 'clip'].includes(getComputedStyle(ro).overflowX);
+  return {
+    vw, scroll: document.documentElement.scrollWidth, body: document.body.scrollWidth, wide, text: ro.textContent, textEnd, whole: textEnd <= box[1] + 0.5, ink: clips ? Math.min(textEnd, box[1]) : textEnd,
+    bar: edges(document.querySelector('.bar')), readout: box, find: edges(document.getElementById('find')), play: edges(document.getElementById('play')),
+  };
+};
+
+test('nothing overflows horizontally at 390 px, and the widest readout fits beside the buttons', async (t) => {
+  // The start view's readout, and the widest the page shows: 21 characters, as at az −179.9, el −70
+  // (az reads 0 to 359.9, el −70 to 70), with the fallback font and the two stand-ins.
+  const cases = [{ view: 'the start view', query: 'tour=0', text: 'AZ 8.0° · EL -16.0°', ...FONTS[0] }, ...FONTS.map((f) => ({ view: 'the widest readout', query: 'az=-179.9&el=-70&tour=0', text: 'AZ 180.1° · EL -70.0°', ...f }))];
+  const broken = [];
+  for (const c of cases) {
+    const r = await withPage(c.query, { ...PHONE, fonts: c.fonts }, async ({ page }) => {
+      // A stand-in loads from the stylesheet the page adds at load; wait until the font measures as it should.
+      let em = await page.evaluate(MONO_EM);
+      for (const end = Date.now() + 5000; c.em !== null && Math.abs(em - c.em) >= 0.002 && Date.now() < end;) {
+        await sleep(50);
+        em = await page.evaluate(MONO_EM);
+      }
+      if (c.em !== null && Math.abs(em - c.em) >= 0.002) throw new Error(`the font stand-in did not load: the page's monospace font measures ${em.toFixed(4)} em, not ${c.em}; it needs the local font Courier New`);
+      return { ...(await page.evaluate(LAYOUT)), em: +em.toFixed(4) };
+    });
+    t.diagnostic(`${c.view} with ${c.font}: ${JSON.stringify(r)}`);
+    const at = `${c.view} ("${r.text}") with ${c.font} (${r.em} em)`;
+    if (r.vw !== 390) broken.push(`${at}: the layout viewport is ${r.vw} px wide, not 390`);
+    if (!(r.scroll <= r.vw && r.body <= r.vw)) broken.push(`${at}: the document scrolls sideways: scrollWidth ${r.scroll} px (body ${r.body} px) in a ${r.vw} px viewport`);
+    if (r.wide.length) broken.push(`${at}: elements reach past the viewport edges: ${r.wide.join(', ')}`);
+    if (r.text !== c.text) broken.push(`${at}: the readout shows "${r.text}", not "${c.text}"`);
+    if (!(r.readout[0] >= r.bar[0] - 0.5 && r.play[1] <= r.bar[1] + 0.5)) broken.push(`${at}: the bar runs from ${r.bar[0]} to ${r.bar[1]} px, inside the 16 px gutters, but the readout starts at ${r.readout[0]} and Play ends at ${r.play[1]}`);
+    if (!(r.ink <= r.find[0] + 0.5)) broken.push(`${at}: the readout shows to ${r.ink} px, under "Find the angle", which starts at ${r.find[0]}`);
+    if (c.whole && !r.whole) broken.push(`${at}: the readout's text runs to ${r.textEnd} px, past its box at ${r.readout[1]}, so it is cut short; it must show whole beside the buttons`);
+  }
+  assert.deepEqual(broken, [], 'at 390 px the page must stay inside the viewport, keep the buttons inside the bar and show the widest readout whole');
+});
+
+// The budget the plan states for the page's cost on a GPU (docs/work/1_sentence-sequence/plan.md,
+// "Budget"): 48,000 particles, and sprites that cover about 3× the screen at 1920×1080 and DPR 2.
+const PARTICLES = 48000;
+const MAX_OVERDRAW = 3;          // sprite fragments per frame over the screen's pixels at 3840×2160 device px, default zoom: 2.72–2.95 measured at the start view and the six eyes; sprites on squares 1.25× wider cover about 1.56× that
+// Reads the point sizes the GPU computes, through transform feedback. Before the page's scripts run
+// it adds gl_Position and gl_PointSize as transform-feedback outputs of the programs that set
+// gl_PointSize, records the point draws of each frame (a frame starts with the sky's draw, the first
+// that is not of points), and skips every draw the page makes, so the page keeps setting its
+// uniforms each frame but costs nothing at 3840×2160. measure() replays the last frame's point draws
+// with the rasterizer off and sums each sprite's square, clipped to the screen.
+const FILL_PROBE = () => {
+  const G = WebGL2RenderingContext.prototype;
+  const { shaderSource, attachShader, linkProgram, drawArrays, useProgram, bindVertexArray } = G;
+  const sizedShaders = new WeakSet(), sized = new WeakSet();
+  const s = window.__fill = { gl: null, frame: [], next: [], used: null, usedVao: null };
+  G.shaderSource = function (sh, src) { if (/gl_PointSize/.test(src)) sizedShaders.add(sh); return shaderSource.call(this, sh, src); };
+  G.attachShader = function (p, sh) { if (sizedShaders.has(sh)) sized.add(p); return attachShader.call(this, p, sh); };
+  G.linkProgram = function (p) { if (sized.has(p)) this.transformFeedbackVaryings(p, ['gl_Position', 'gl_PointSize'], this.INTERLEAVED_ATTRIBS); return linkProgram.call(this, p); };
+  G.useProgram = function (p) { s.used = p; return useProgram.call(this, p); };
+  G.bindVertexArray = function (v) { s.usedVao = v; return bindVertexArray.call(this, v); };
+  G.drawArrays = function (mode, first, count) {
+    if (mode !== this.POINTS) { if (s.next.length) s.frame = s.next; s.next = []; return; }
+    if (sized.has(s.used)) { s.gl = this; s.next.push({ program: s.used, vao: s.usedVao, first, count }); }
+  };
+  s.measure = () => {
+    const gl = s.gl, draws = s.next.length ? s.next : s.frame;
+    if (!gl || !draws.length) throw new Error('the page made no point draw with a program that sets gl_PointSize');
+    const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight;
+    let n = 0, fill = 0, sum = 0, largest = 0;
+    for (const d of draws) {
+      const buf = gl.createBuffer(), tf = gl.createTransformFeedback();
+      gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, buf);
+      gl.bufferData(gl.TRANSFORM_FEEDBACK_BUFFER, d.count * 20, gl.STREAM_READ);
+      gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, null);
+      gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
+      gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, buf);
+      useProgram.call(gl, d.program);
+      bindVertexArray.call(gl, d.vao);
+      gl.enable(gl.RASTERIZER_DISCARD);
+      gl.beginTransformFeedback(gl.POINTS);
+      drawArrays.call(gl, gl.POINTS, d.first, d.count);
+      gl.endTransformFeedback();
+      gl.disable(gl.RASTERIZER_DISCARD);
+      bindVertexArray.call(gl, null);
+      gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, null);
+      gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+      const out = new Float32Array(d.count * 5);
+      gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, buf);
+      gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER, 0, out);
+      gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, null);
+      gl.deleteBuffer(buf);
+      gl.deleteTransformFeedback(tf);
+      n += d.count;
+      for (let i = 0; i < d.count; i++) {
+        const [x, y, z, w, q] = out.subarray(i * 5, i * 5 + 5);
+        sum += q * q;
+        largest = Math.max(largest, q);
+        if (!(w > 0) || z < -w || z > w) continue;   // outside the near or far plane
+        const cx = (x / w + 1) / 2 * W, cy = (y / w + 1) / 2 * H;
+        fill += Math.max(0, Math.min(W, cx + q / 2) - Math.max(0, cx - q / 2)) * Math.max(0, Math.min(H, cy + q / 2) - Math.max(0, cy - q / 2));
+      }
+    }
+    return { n, draws: draws.length, W, H, fill, sum, largest };
+  };
+};
+
+test('the particle count and the sprite fill stay within the budget the plan states', async (t) => {
+  const views = [['the start view', 't=0&tour=0'], ...NAMES.map((name) => [`the eye of "${name}"`, `msg=${name}&t=0&tour=0`])];
+  const broken = [];
+  for (const [what, query] of views) {
+    const r = await withPage(query, { width: 1920, height: 1080, dpr: 2, initScript: FILL_PROBE }, ({ page }) => page.evaluate(() => ({ ...window.__fill.measure(), reported: window.__cloud.counts.text + window.__cloud.counts.ambient })));
+    const over = r.fill / (r.W * r.H);
+    t.diagnostic(`${what}: ${r.n} particles drawn a frame in ${r.draws} draw(s), ${r.reported} reported; on ${r.W}×${r.H} px the sprites cover ${(r.fill / 1e6).toFixed(2)} M px, ${over.toFixed(3)}× the screen (${(r.sum / 1e6).toFixed(2)} M unclipped; largest sprite ${r.largest.toFixed(1)} px)`);
+    if (r.W !== 3840 || r.H !== 2160) throw new Error(`the page drew at ${r.W}×${r.H} device px, not the 3840×2160 that 1920×1080 at DPR 2 gives, so the fill is not measured where the budget is stated`);
+    if (r.n !== r.reported) broken.push(`${what}: the page draws ${r.n} particles a frame (in ${r.draws} draw(s)) but reports ${r.reported} in window.__cloud.counts`);
+    if (!(r.n <= PARTICLES)) broken.push(`${what}: the page draws ${r.n} particles a frame, more than the ${PARTICLES} of its budget`);
+    if (!(over <= MAX_OVERDRAW)) broken.push(`${what}: the sprites cover ${over.toFixed(3)}× the screen's pixels at 1920×1080 and DPR 2 (${(r.fill / 1e6).toFixed(2)} M fragments a frame), more than the ${MAX_OVERDRAW}× of its budget`);
+  }
+  assert.deepEqual(broken, [], 'the page must stay within the particle and sprite-fill budget the plan states');
 });
 
 test('Tab reaches the canvas, then "Find the angle", each with a visible focus style; keys work on the focused canvas', async (t) => {

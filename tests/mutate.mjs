@@ -56,9 +56,10 @@ const DEFAULT_DRAW = 'else gl.drawArrays(gl.POINTS, 0, N_TOTAL);';
 // `found` turns true when a glide lands, so the reveal shows only after "Find the angle".
 const FOUND = [['let ready = false, frames = 0;', 'let ready = false, frames = 0, found = false;'],
   ["if (stepAnim(now)) { if (mode === 'tour') nextStep(); else { mode = 'idle'; heading = -1; } }", "if (stepAnim(now)) { if (mode === 'tour') nextStep(); else { if (mode === 'glide') found = true; mode = 'idle'; heading = -1; } }"]];
-// 1 once the camera has stayed within 1° of E in `mode` for 5 s; the timer restarts on leaving.
+// 1 once the camera has stayed within 1° of E (or where `near` holds) in `mode` for 5 s; the timer
+// restarts on leaving.
 const DWELL_DECL = ['let ready = false, frames = 0;', 'let ready = false, frames = 0, dwellFrom = null;'];
-const dwell = (m) => `(mode === '${m}' && alignDeg() < 1 ? (performance.now() - (dwellFrom ??= performance.now()) > 5000 ? 1 : 0) : (dwellFrom = null, 0))`;
+const dwell = (m, near = 'alignDeg() < 1') => `(mode === '${m}' && ${near} ? (performance.now() - (dwellFrom ??= performance.now()) > 5000 ? 1 : 0) : (dwellFrom = null, 0))`;
 // 1 once the tour's hold at E (a hold is an anim without a target) has run `ms`.
 const tourHold = (ms) => `(mode === 'tour' && anim && !anim.target && alignDeg() < 1e-3 && performance.now() - anim.t0 > ${ms} ? 1 : 0)`;
 
@@ -133,7 +134,11 @@ const PAGE_MUTANTS = [
     edits: [['cam.zoom = clampZoom(pinch.zoom * spread() / pinch.d);', '/* mutant: pinch ignored */']] },
   { name: 'tour-ignores-input', defect: 'a press during the tour does not stop it',
     edits: [["  stopAuto();\n  mode = 'drag';", "  if (mode !== 'tour') { stopAuto(); mode = 'drag'; }"]] },
-  { name: 'tour-restarts', defect: 'the tour restarts after 7 s without input (the round-0 behaviour)',
+  // Killed by tests/motion.test.mjs (a press stops the tour for good) and by tests/sequence.test.mjs
+  // (the tour at load ends idle at "world"). Before F57 the capture-loop check also failed on it, but
+  // only because a late start let the loop move on (F66); capture mode is never idle, so this mutant
+  // leaves it as it is.
+  { name: 'tour-restarts', defect: 'the tour starts again whenever 7 s pass without input: as soon as the tour at load ends, and 7 s after a press stops it (the round-0 behaviour)',
     edits: [["} else if (mode === 'idle' && !autoplayed && lastInput === -Infinity && (capture || tourAllowed())) {", "} else if (mode === 'idle' && now - lastInput > 7000 && (capture || tourAllowed())) {"]] },
   { name: 'zoom-cancels-animation', defect: 'wheel or +/- during a glide or snap cancels it (the round-0 behaviour)',
     edits: [["if (anim && anim.target && (mode === 'snap' || mode === 'glide')) { anim.z0 = cam.zoom; anim.dz = 0; anim.target.zoom = cam.zoom; }\n  else if (mode !== 'drag') stopAuto();", "if (mode !== 'drag') stopAuto();"]] },
@@ -199,7 +204,7 @@ const PAGE_MUTANTS = [
   { name: 'reduced-switch-glides-on', defect: 'reduced motion switched on mid-glide in Play or capture mode lets the glide run on to its eye; only later steps cut (F56)',
     edits: [['  if (anim && anim.target) {\n    cam.az = wrapPi(anim.target.az); cam.el = anim.target.el; cam.zoom = anim.target.zoom ?? cam.zoom;\n    anim = null;\n    nextStep();\n  }\n', '']] },
   { name: 'escape-ignored', defect: 'Escape does not end capture mode (F61)',
-    edits: [["if (e.key === 'Escape') { e.preventDefault(); noteInput(); setCapture(false); }", "if (e.key === 'Escape') { e.preventDefault(); noteInput(); }"]] },
+    edits: [["if (e.key === 'Escape') { e.preventDefault(); noteInput(); setCapture(false); dropCaptureAnchor(); }", "if (e.key === 'Escape') { e.preventDefault(); noteInput(); }"]] },
   { name: 'escape-keeps-playing', defect: 'Escape shows the controls again but the sequence plays on (F61)',
     edits: [["  document.documentElement.classList.toggle('capture', on);\n  stopAuto();\n", "  document.documentElement.classList.toggle('capture', on);\n"]] },
   { name: 'play-cuts', defect: 'Play cuts from eye to eye without reduced motion (F61)',
@@ -221,6 +226,41 @@ const PAGE_MUTANTS = [
     edits: [["{ name: 'hello-world', az: 38, el: 14, lines: ['hello', 'world'], slant: SLANT, scale: 2.65, baseline: 0.36 }", "{ name: 'hello-world', az: 38, el: 14, lines: ['hello', 'world'], slant: SLANT, scale: 2.65, baseline: 0.36, weight: 2 }"]] },
   { name: 'upright-in-layers', defect: 'the letters stand upright and every message\'s particles sit in depth layers 2 units apart along their sight lines, so the streak floor rises with the columns above and below E and only the absolute bound holds them (F54)',
     edits: [['const SLANT = 14;', 'const SLANT = 0;'], ['P[i * 3 + a] = pos[a] + dirs[i * 3 + a] * dist;', 'P[i * 3 + a] = pos[a] + dirs[i * 3 + a] * (tl + Math.round((dist - tl) / 2) * 2);']] },
+  // Repair round 1 (R1c): the sequence, capture mode and the page.
+  { name: 'reveal-after-find-at-world', defect: 'once "Find the angle" has glided to the eye of "world", the last message, text particles brighten 1.25× there (a reveal after a landing at a later eye, which views set by URL do not show; F62)',
+    edits: [TEXT_DECL, NEAR_UNIFORM, nearSet('found && atMessage() === 5 ? 1 : 0'), TEXT_BRIGHTER, ...FOUND] },
+  { name: 'reveal-after-dwell-later', defect: 'text particles brighten 1.25× once the camera has stayed idle exactly at the eye of a message after hello world for 5 s (a reveal for a viewer who holds a later message, which shots on landing do not show; F62)',
+    edits: [TEXT_DECL, NEAR_UNIFORM, nearSet(dwell('idle', 'atMessage() > 0')), TEXT_BRIGHTER, DWELL_DECL] },
+  { name: 'capture-shows-cursor', defect: 'capture mode hides the controls but leaves the mouse cursor over the scene, where a recording shows it (F69)',
+    edits: [['  .capture #scene { cursor: none; }\n', '']] },
+  { name: 'capture-wheel-zooms', defect: 'in capture mode the wheel zooms, which stops the looping sequence (F69)',
+    edits: [['  if (capture) return;\n  const unit = e.deltaMode', '  const unit = e.deltaMode']] },
+  { name: 'capture-keys-steer', defect: 'in capture mode the arrow and zoom keys steer as they do outside it, which stops the looping sequence; Escape still ends capture mode (F69)',
+    edits: [["  if (capture) {\n    if (e.key === 'Escape') { e.preventDefault(); noteInput(); setCapture(false); dropCaptureAnchor(); }\n    return;\n  }\n", "  if (capture && e.key === 'Escape') { e.preventDefault(); noteInput(); setCapture(false); dropCaptureAnchor(); return; }\n"]] },
+  { name: 'capture-plays-once', defect: 'capture mode plays the sequence once and stops at "world" instead of looping (F69)',
+    edits: [["if (!seq.loop) { seq = null; mode = 'idle'; heading = -1; return; }", "if (!seq.loop || capture) { seq = null; mode = 'idle'; heading = -1; return; }"]] },
+  { name: 'messages-misreported', defect: 'window.__cloud.messages reports the eye of "What" 6° east of the one the page forms it for and the sequence holds at (F69)',
+    edits: [['freeze({ name: m.name, az: m.az, el: m.el })', "freeze({ name: m.name, az: m.az + (m.name === 'what' ? 6 : 0), el: m.el })"]] },
+  { name: 'msg-off-eye', defect: 'msg=<name> puts the camera 0.5° above that message\'s eye, so views set by URL miss it (F69)',
+    edits: [['cam.el = M[msgParam].el * DEG; cursor = msgParam;', 'cam.el = (M[msgParam].el + 0.5) * DEG; cursor = msgParam;']] },
+  { name: 'capture-flag-false', defect: 'window.__cloud.capture reports false in capture mode (F69)',
+    edits: [['capture: { enumerable: true, get: () => capture },', 'capture: { enumerable: true, get: () => false },']] },
+  { name: 'escape-keeps-anchor', defect: 'Escape ends capture mode but leaves #capture in the address, so adding it again does not start capture mode again (F71)',
+    edits: [['setCapture(false); dropCaptureAnchor(); }', 'setCapture(false); }']] },
+  { name: 'escape-anchor-unguarded', defect: 'Escape takes the #capture anchor out of the address with no guard, so on a host that blocks history changes it throws a page error (F71)',
+    edits: [["  try { history.replaceState(history.state, '', location.href.replace(/#.*$/, '')); } catch { /* the host blocks history changes */ }\n", "  history.replaceState(history.state, '', location.href.replace(/#.*$/, ''));\n"]] },
+  { name: 'escape-reloads', defect: 'Escape takes the #capture anchor out of the address by loading the page again, not in the same document (F71)',
+    edits: [["  try { history.replaceState(history.state, '', location.href.replace(/#.*$/, '')); } catch", "  try { location.replace(location.href.replace(/#.*$/, '')); } catch"]] },
+  { name: 'readout-pushes-buttons', defect: 'the readout keeps its full width on a narrow screen, so a wide font pushes the buttons past the bar (F74)',
+    edits: [[' min-width: 0; overflow: hidden; text-overflow: ellipsis; }', ' }']] },
+  { name: 'readout-text-spills', defect: 'the readout gives way on a narrow screen but does not clip its text, so with a wide font the text runs on under "Find the angle" (F74)',
+    edits: [[' min-width: 0; overflow: hidden; text-overflow: ellipsis; }', ' min-width: 0; }']] },
+  { name: 'readout-wide-spacing', defect: 'on narrow screens the readout\'s letter spacing is 0.04 em, not 0.02 em, 4.6 px more for the widest readout: it still fits with the fallback font, but the web font\'s 0.600 em cuts it short beside the buttons (F74)',
+    edits: [['    #readout { font-size: 11px; letter-spacing: .02em; }', '    #readout { font-size: 11px; letter-spacing: .04em; }']] },
+  { name: 'more-particles', defect: 'the cloud has 60,000 particles, a quarter more than the budget the plan states (F76)',
+    edits: [['const N_TOTAL = 48000,', 'const N_TOTAL = 60000,']] },
+  { name: 'bigger-sprites', defect: 'every sprite is drawn on a square 1.25× wider, so the sprites cover about 1.56× as many pixels (F76)',
+    edits: [['gl_PointSize = quad;', 'gl_PointSize = quad * 1.25;']] },
 ];
 
 // The hygiene gate scans text, including this file, so the defects below are assembled from

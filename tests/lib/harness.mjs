@@ -2,8 +2,9 @@
 // SwiftShader) and opens the page under test from disk in fresh contexts.
 // PAGE (env) selects the page, relative to the repo root; the default is index.html. Mutation
 // runs point it at a copy under tmp/mutants/.
-// Network policy for every context: the Google Fonts stylesheet is answered with empty CSS
-// (aborting it would log a console error); every other http(s) request is aborted and recorded.
+// Network policy for every context: the Google Fonts stylesheet is answered with empty CSS, or with
+// a test's own CSS (aborting it would log a console error); every other http(s) request is aborted
+// and recorded.
 // The harness never writes page state; tests read window.__cloud and drive real input.
 import { chromium } from 'playwright';
 import { AssertionError } from 'node:assert';
@@ -28,7 +29,8 @@ export function startBrowser() {
 
 // A new browser context with the network policy, and a log (shared by its pages) of console
 // errors and warnings, page errors, every request URL and every blocked request.
-// fonts: 'empty' answers the Google Fonts stylesheet with empty CSS; 'hang' never answers it.
+// fonts: 'empty' answers the Google Fonts stylesheet with empty CSS; 'hang' never answers it;
+// { css } answers it with that CSS.
 // initScript runs in every page of the context before the page's own scripts.
 export async function newContext(browser, { width = 1280, height = 800, dpr = 1, reducedMotion = 'no-preference', hasTouch = false, isMobile = false, fonts = 'empty', initScript = null } = {}) {
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: dpr, reducedMotion, hasTouch, isMobile });
@@ -44,7 +46,7 @@ export async function newContext(browser, { width = 1280, height = 800, dpr = 1,
   });
   await context.route(/^https?:\/\//, (route) => {
     const url = route.request().url();
-    if (FONT_CSS.test(url)) return fonts === 'hang' ? undefined : route.fulfill({ status: 200, contentType: 'text/css', body: '' });
+    if (FONT_CSS.test(url)) return fonts === 'hang' ? undefined : route.fulfill({ status: 200, contentType: 'text/css', body: fonts?.css ?? '' });
     log.blocked.push(url);
     return route.abort();
   });

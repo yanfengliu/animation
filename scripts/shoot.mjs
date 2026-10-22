@@ -162,7 +162,7 @@ if (!/^\d+x\d+$/.test(opts.viewport)) fail(`--viewport=${opts.viewport} is not W
 if (!/^\d+$/.test(opts.frames)) fail(`--frames=${opts.frames} is not a whole number of frames`);
 if (opts.preset) views.push(...preset(opts.preset));
 for (const v of views) checkView(v);
-if (!views.length) fail('no views; pass key=value views or --preset=magic|off|all (see the header of scripts/shoot.mjs)');
+if (!views.length) fail('no views; pass key=value views or --preset=magic|off|all|seq|between (see the header of scripts/shoot.mjs)');
 
 const outDir = path.resolve(root, opts.out);
 await mkdir(outDir, { recursive: true });
