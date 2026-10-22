@@ -145,8 +145,13 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
     - 14 named mutants, 10 of them new: all killed by checks after a green control (2,532 s).
     - Rendering unchanged: 27 of 27 acceptance digests are identical.
     - Beyond the brief: the sequence file runs in its own phase, after a font-hang flake beside it. A hold's last 100 ms may name the next message, and must name exactly that one.
-  - [ ] R1b, W20: F51–F54, with F63 and F64 folded in (illusion gates).
-  - [ ] R1c: F62, F65, F66, F68–F71 and F74–F76, plus F72 if the owner wants a loopable clip.
+  - [x] R1b, W20: F51–F54, with F63 and F64 folded in (illusion gates), committed as `b089b37` on 2026-10-22.
+    - `npm test`: 45 of 45 in three runs (187.1–189.5 s). The illusion file grew by about 30 s.
+    - 13 named mutants, 6 of them new: all killed by checks after a green control (2,662 s).
+    - Rendering unchanged: 27 of 27 acceptance digests are identical. The page gained a test-only `relocate=<name>` hook.
+    - The far-view hiding gate (`MAX_GHOST_LIFT` 1.33) holds the antipode ghosts near today's level: the page reaches 1.297 at most, and a mutant that halves "world"'s depth reaches 1.376.
+  - [ ] R1c, W21: F62, F66, F69, F71, F74 and F76, plus the `scripts/shoot.mjs` and defect-register parts of F75 (sequence, page, capture mode).
+  - [ ] R1d: F65, F68, F70 and the `tests/illusion.test.mjs` parts of F75 (illusion gates). F72 joins it, or a later milestone, if the owner wants a loopable clip.
 - Owner questions, 2026-10-22:
   - F72: should one recorded pass loop as a video without a jump? That needs the particles' drift to repeat once per pass.
   - F73: is the stillness of each message, seen from its own eye, an acceptable cue?
