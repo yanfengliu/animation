@@ -3,7 +3,7 @@
 Status: active
 Owner: Claude coordinator session
 Created: 2026-10-15
-Updated: 2026-10-15
+Updated: 2026-10-21
 
 ## Problem and outcome
 
@@ -180,4 +180,28 @@ Why: the owner's directive of 2026-10-18 (fleet R6). An orchestration thread pas
 - no visible browsers and no save prompts;
 - every particle renders alike at every angle.
 
-**Successor receipt:** pending.
+**Successor receipt:** 2026-10-21. The successor coordinator received this note and reconciled it against the tree. It works on `main` in the primary checkout.
+
+- Goal and acceptance criteria: unchanged.
+- Verified: `main` and `origin/main` are at `e67597f`, this note's commit. All eleven uncommitted files match the sha256 prefixes in the table above.
+- Correction: W17 got further than this note says. Its logs in `tmp/w17/` show the gates finished and green on this exact tree:
+  - `npmtest-1.log` and `npmtest-2.log` (2026-10-15, 00:25 and 00:28): 42 of 42 passed, in 210 s and 180 s.
+  - The second run started at 00:25:43, just after the last test-file write (`tests/lib/harness.mjs`, 00:25:43). Every other code and test file is older.
+  - `mutate-full.log` (00:29 to 03:25): control green (42 tests), then 81 mutants: 81 killed, 0 survived, 0 errored, 0 flagged, in 10,572 s.
+  - Only `AGENTS.md` changed after those runs (2026-10-21, docs only).
+- Not done: W17 stopped before it filled in and ran `tmp/w17/agents-update.mjs`, its prepared rewrite of the AGENTS.md "Gates" and "What the suite proves" sections. Those sections still describe the 36-test, 74-mutant suite for hello world alone. No `tmp/w17-status.md` exists.
+- Defect (R7): two merged worktrees from work unit 0 remain at `d9cfa44`, both clean. They are `.claude/worktrees/nifty-bardeen-a20921` (branch `claude/nifty-bardeen-a20921`) and `.claude/worktrees/suspicious-wescoff-85e29d` (detached; branch `claude/suspicious-wescoff-85e29d` also exists).
+
+Reconciled todos, in dependency order:
+1. M2 close-out by one gate worker, W18, in this checkout:
+   - run `npm test` fresh to confirm W17's logs;
+   - check W17's gates against the items in todo 1 above and fix any real gap;
+   - fill in and apply the AGENTS.md Gates sections from measured values, and check the README;
+   - three green runs on the final tree: W17's two count while code and tests stay byte-identical, so at least one fresh run, or three if any code or test file changes;
+   - W17's full proof stands for unchanged code; a changed gate or page reruns the mutants it touches by name after a green control;
+   - then one commit of page, gates and docs, pushed.
+2. Independent read-only review of that commit on the fleet runbook's pins. Repairs are capped at five rounds, and each reruns the affected checks.
+3. Coordinator's visual acceptance at native resolution, with sha256 digests: the six eyes at 1280×800 and 390×844, the midpoints, far and random views, and the `#capture` loop.
+4. Republish the artifact (read it first, then publish the stripped page).
+5. The devlog line, this plan's Outcome and checkboxes, and a push.
+6. Clean up: remove the two merged worktrees and their branches once no session uses them. Ask the owner before deleting `tmp/w16`, `tmp/w17`, `tmp/w16-status.md` and `tmp/mutants`.
