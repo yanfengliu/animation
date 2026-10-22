@@ -190,7 +190,11 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
     - The alike bounds hold for seeds 1–12 (`MAX_CLIPPED` reaches 7.46% for seed 8 against 8%).
     - The identity of the shipped render with the two layers is now stated as measured: one-level differences in 7–623 channel values a frame, residual at most 0.0013% against 0.1%.
   - F87, found by W24: the camera-mode and hold pictures still claim "exactly 0 measured", but the runs print those residuals only to four decimals, so the claim is unproven. The wrap-up docs pass corrects it, unless review round 2 finds more.
-- [ ] Full mutation proof on the final revision, the only browser workload while it runs, beside review round 2.
+- [x] Review round 2 of repair round 2 (`6adc5b8..8560485`), both lanes on a clone of `8560485`, 2026-10-22. Dispositions are in [reviews/2_integration.md](reviews/2_integration.md).
+  - 2 major and 6 minor findings, F88–F95; none is against the owner's rule.
+  - The full proof of `8560485` was stopped after 17 of 130 mutants (all killed, control green), so repair round 3 could run first.
+- [ ] Repair round 3 (R3): F87–F95, one milestone.
+- [ ] Full mutation proof on the final revision, the only browser workload while it runs, beside review round 3.
 - [ ] Republish the artifact, then the devlog, Outcome and cleanup.
 
 ## Outcome
