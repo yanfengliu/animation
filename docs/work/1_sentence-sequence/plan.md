@@ -120,3 +120,64 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
 ## Outcome
 
 Pending.
+
+## Handoff, 2026-10-21: coordinator rollover
+
+Why: the owner's directive of 2026-10-18 (fleet R6). An orchestration thread past ten turns stops assigning work and hands off to a successor session with an R8 note. The first coordinator session passed ten turns long ago. The successor confirms below that it received this note and reconciled the goal and todos; only then is the old session archived.
+
+**Goal and acceptance:** unchanged. See "Problem and outcome" and "Acceptance criteria" above. None of the criteria is met yet, because nothing of work unit 1 is committed.
+
+**Repository state:**
+- `main` and `origin/main` are at `483ef1c`. This includes three fleet canon-sync commits (`2a233b5`, `25bdbc3`, `483ef1c`) that changed only the AGENTS.md canon block.
+- Uncommitted in the primary checkout. Do not discard any of it.
+
+  | File | sha256 prefix | Owner and status |
+  |---|---|---|
+  | `index.html` | `2b96e35b` | W16's page, accepted by the coordinator |
+  | `scripts/shoot.mjs` | `812d58c4` | W16's page, accepted |
+  | `tests/illusion.test.mjs` | `4871bfce` | W17, partial |
+  | `tests/lib/harness.mjs` | `bf4471a5` | W17, partial |
+  | `tests/lib/image.mjs` | `bc3854c2` | W17, partial |
+  | `tests/mutate.mjs` | `4d4bf750` | W17, partial |
+  | `tests/page.test.mjs` | `bba71584` | W17, partial |
+  | `tests/lib/messages.mjs` (new) | `354caec2` | W17, partial |
+  | `tests/sequence.test.mjs` (new, 272 lines) | `e106111f` | W17, partial |
+  | `AGENTS.md` | `bdd844f4` | W17's edits outside the block; the block is byte-identical to `483ef1c` |
+  | `README.md` | `42594498` | W17, partial |
+
+- Every test file parses with `node --check`. W17 stopped on 2026-10-15 at a weekly API limit, in the middle of restructuring `tests/illusion.test.mjs`. Whether `npm test` passes on this tree is unknown. The last known run, before W17's edits, was 28 of 36 (`tmp/w16/npm-test-2.log`). No mutation-proof log exists.
+- Ignored evidence:
+  - `tmp/w16/final2/`: the accepted page's face shots.
+  - `tmp/w16/final/`: shots of the previous revision.
+  - `tmp/w17/`: W17's probes and timing scripts.
+
+**Todos for the successor coordinator** (dependencies in order):
+1. Assign a gate worker to finish milestone 2 from W17's partial work, under W17's brief. The brief is the M2 step above together with the milestone-1 notes.
+   - It should first run `npm test` on this tree and compare W17's edits against the brief.
+   - Then:
+     - single-message masks (`textof=<name>&layer=text` minus the sky) with a clip-aware colour check;
+     - per-message legibility, alike and hiding gates;
+     - sequence and capture through real input;
+     - the tour shot inside hello world's 5.11–8.11 s hold;
+     - new mutants and moved anchors;
+     - docs and the README.
+   - Then three green `npm test` runs, a clean full mutation proof (a long run; the only browser workload), and one commit of page and gates together.
+2. An independent review on the fleet runbook's pins, read-only. Repairs are capped at five rounds.
+3. The coordinator's own visual acceptance at native resolution, with sha256 digests recorded: all six eyes at 1280×800 and 390×844, the midpoints, far and random views, and the `#capture` loop.
+4. Republish the artifact https://claude.ai/artifact/DXryp6rehkTohF7Eumat5f (now version 3, the slanted hello world). Read it first, then publish the stripped page; AGENTS.md "Conventions" says how to strip it.
+5. Write the devlog line, the plan's Outcome, push, and clean `tmp/w16` and `tmp/w17`. An earlier deletion of `tmp/` was denied by the permission system, so ask the owner before deleting.
+
+**Decisions so far:** in "Implementation steps" above. They cover the eyes, the counts, the face's weight of 0.6, the face's eyes of 0.9 units, 48k particles, β 0.85, the timings and the capture behaviour.
+
+**Risks:**
+- `npm test` took 149 s before W17's new gates, and the full proof may take hours.
+- Weekly API limits stopped workers four times; each wrote or should write `tmp/<worker>-status.md`.
+- Fill rate is about 2.6× the old page, not measured on a real GPU.
+
+**Rules that still hold:**
+- work on `main`, one implementation worker at a time (`docs/policies/local-rules.md`);
+- edit `.html` only through Node `fs`;
+- no visible browsers and no save prompts;
+- every particle renders alike at every angle.
+
+**Successor receipt:** pending.
