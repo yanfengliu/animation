@@ -175,7 +175,14 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
   - 2 major and 8 minor findings, F77–F86. None is against the owner's rule; both lanes found the rendering ties intact.
   - The full proof of `6adc5b8` was stopped after 17 of 116 mutants (all killed, control green), so that repair round 2 could run first.
 - [ ] Repair round 2, one worker at a time:
-  - [ ] R2a: F78–F81, F83, and F86's sequence checks.
+  - [x] R2a, W23: F78–F81, F83, and F86's sequence checks, committed as `b3c5f9b` on 2026-10-22, on top of the owner's canon sync `d14b771`.
+    - `npm test`: 48 of 48 in three runs (215.0–217.9 s).
+    - 26 named mutants, 12 of them new: all killed by checks after green controls (5,631 s and 640 s).
+    - Rendering unchanged: 27 of 27 acceptance digests are identical.
+    - The page now lands a running Find glide or snap, and stops a coast, when reduced motion switches on.
+    - The load tour is pictured idle at "world", on arrival and 8 s later.
+    - Hold shots are clipped, and ended 1.11–1.43 s before their holds did.
+    - The old Escape check pressed during a hold, so it never tested a glide; it now presses mid-glide.
   - [ ] R2b: F77, F82, F84, F85, and F86's two lower edges.
 - [ ] Full mutation proof on the final revision, the only browser workload while it runs, beside review round 2.
 - [ ] Republish the artifact, then the devlog, Outcome and cleanup.
