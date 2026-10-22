@@ -159,7 +159,14 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
       - the readout gives way to the buttons on narrow screens.
     - Budget gate: at most 48,000 particles a frame, and sprites covering at most 3× the screen at 1920×1080, DPR 2 (2.72–2.95× measured at the start view and the six eyes).
     - Open risk: fully zoomed in, sprites cover about 13.6× the screen, and no gate bounds that. Capture mode never zooms past the default.
-  - [ ] R1d: F65, F68, F70 and the `tests/illusion.test.mjs` parts of F75 (illusion gates). F72 joins it, or a later milestone, if the owner wants a loopable clip.
+  - [x] R1d, W22: F65, F68, F70 and the `tests/illusion.test.mjs` parts of F75 (illusion gates), committed as `6adc5b8` on 2026-10-22. `index.html` is unchanged.
+    - `npm test`: 47 of 47 in three runs (199.6–200.2 s).
+    - 10 named mutants: all killed by checks after green controls (2,033 s and 405 s).
+    - F65: the tour shot is clipped to its compared region, so the reads now end 1.29–1.32 s before hello world's hold does (was 0.53–1.10 s). The 1.5 s dwell rule is unchanged.
+    - F68: at each eye the scene's light, over the mean at its two neighbouring midpoints, must stay within 0.95–1.03. The page measures 0.976–1.003 over seeds 1–12. It catches a whole-scene glow of 5.5% at E and 3.1–4.8% at the other eyes. A 15% glow, which passed before, is now the `scene-glows-a-little` mutant.
+    - F70 did not hold on today's code: a page that ignores `textof` fails 8 of the illusion file's 13 tests by checks. The `textof-ignored` mutant records that.
+    - F75: `MIN_LIFT` moved from 1.45 to 1.51. The page measures 1.532–2.046 and the β 0.2 mutant 1.308–1.498 (seeds 1–12). The stale comments are corrected.
+  - F72 is open until the owner answers.
 - Owner questions, 2026-10-22:
   - F72: should one recorded pass loop as a video without a jump? That needs the particles' drift to repeat once per pass.
   - F73: is the stillness of each message, seen from its own eye, an acceptable cue?
