@@ -183,6 +183,27 @@ const PAGE_MUTANTS = [
     edits: [["if (capture || (e.pointerType === 'mouse' && e.button !== 0)) return;", "if (e.pointerType === 'mouse' && e.button !== 0) return;"]] },
   { name: 'find-skips-a', defect: '"Find the angle" skips "a": after "What" it goes straight to "beautiful"',
     edits: [['const k = (cursor + 1) % M.length, target = msgTarget(k, Math.min(cam.zoom, 1));', 'const k = (cursor + (cursor === 2 ? 2 : 1)) % M.length, target = msgTarget(k, Math.min(cam.zoom, 1));']] },
+  // Repair round 1 (R1a): the sequence and capture mode.
+  { name: 'find-lands-on-hello-world', defect: '"Find the angle" names the next message but always glides to hello world\'s eye (F49)',
+    edits: [['const k = (cursor + 1) % M.length, target = msgTarget(k, Math.min(cam.zoom, 1));', 'const k = (cursor + 1) % M.length, target = msgTarget(0, Math.min(cam.zoom, 1));']] },
+  { name: 'reveal-in-capture', defect: 'text particles brighten 1.25× in capture mode during its hold at "world", the last of a pass (a reveal in the recording that views set by URL do not show; F50)',
+    edits: [TEXT_DECL, NEAR_UNIFORM, nearSet('capture && heading === 5 && anim && !anim.target ? 1 : 0'), TEXT_BRIGHTER] },
+  { name: 'reveal-in-play', defect: 'text particles brighten 1.25× during the holds of Play from the face on (a reveal in a replay that views set by URL do not show; F50)',
+    edits: [TEXT_DECL, NEAR_UNIFORM, nearSet('seq && !seq.auto && !seq.loop && heading >= 1 && anim && !anim.target ? 1 : 0'), TEXT_BRIGHTER] },
+  { name: 'reveal-in-tour-later', defect: 'text particles brighten 1.25× during the holds of the tour at load from the face on, so not in the hold at hello world that tests/illusion.test.mjs shoots (F50)',
+    edits: [TEXT_DECL, NEAR_UNIFORM, nearSet('seq && seq.auto && heading >= 1 && anim && !anim.target ? 1 : 0'), TEXT_BRIGHTER] },
+  { name: 'capture-focus-outline', defect: 'in capture mode a Tab press focuses the canvas and draws its focus outline into the recording (F55)',
+    edits: [['  .capture #scene:focus-visible { outline: none; }\n', '']] },
+  { name: 'reduced-switch-glides-on', defect: 'reduced motion switched on mid-glide in Play or capture mode lets the glide run on to its eye; only later steps cut (F56)',
+    edits: [['  if (anim && anim.target) {\n    cam.az = wrapPi(anim.target.az); cam.el = anim.target.el; cam.zoom = anim.target.zoom ?? cam.zoom;\n    anim = null;\n    nextStep();\n  }\n', '']] },
+  { name: 'escape-ignored', defect: 'Escape does not end capture mode (F61)',
+    edits: [["if (e.key === 'Escape') { e.preventDefault(); noteInput(); setCapture(false); }", "if (e.key === 'Escape') { e.preventDefault(); noteInput(); }"]] },
+  { name: 'escape-keeps-playing', defect: 'Escape shows the controls again but the sequence plays on (F61)',
+    edits: [["  document.documentElement.classList.toggle('capture', on);\n  stopAuto();\n", "  document.documentElement.classList.toggle('capture', on);\n"]] },
+  { name: 'play-cuts', defect: 'Play cuts from eye to eye without reduced motion (F61)',
+    edits: [['loop, auto, cut: reduced, zoom', 'loop, auto, cut: reduced || (!auto && !loop), zoom']] },
+  { name: 'reduced-play-glides', defect: 'with reduced motion Play still glides (F61)',
+    edits: [['loop, auto, cut: reduced, zoom', 'loop, auto, cut: false, zoom']] },
 ];
 
 // The hygiene gate scans text, including this file, so the defects below are assembled from
@@ -309,7 +330,7 @@ function writeTreeMutant(m) {
 }
 
 // Runs the gate files with the given environment, in the phases npm test uses (the illusion file
-// alone, then the rest two at a time; tests/lib/phases.mjs). Each failed top-level test comes back
+// alone, then the sequence file, then the rest two at a time; tests/lib/phases.mjs). Each failed top-level test comes back
 // with its kind: 'check' for an AssertionError thrown in the test body, 'error' for anything else.
 async function runGates(files, env) {
   Object.assign(process.env, env);

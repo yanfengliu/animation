@@ -7,8 +7,8 @@
 // snap (the zoom takes at once and holds when the move lands), and touch drag and pinch (a pinch
 // at E ends at E; a pinch after a deliberate 17 px drag away from E stays where the drag left it).
 // The tour, coasting and reduced motion are in tests/motion.test.mjs. This file never runs beside
-// the illusion file's renders: npm test and tests/mutate.mjs run that file alone first
-// (tests/lib/phases.mjs).
+// the illusion file's renders or the sequence file's pages: npm test and tests/mutate.mjs run each
+// of those first, in a phase of its own (tests/lib/phases.mjs).
 // Does not prove how the motion feels (easing, inertia), other browsers or devices, or
 // behaviour under slow frame rates.
 import test, { before, after } from 'node:test';

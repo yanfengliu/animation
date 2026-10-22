@@ -59,9 +59,10 @@
   }
   #hint.gone { opacity: 0; }
   #nogl { position: fixed; inset: 0; margin: 0; display: grid; place-items: center; padding: 24px; text-align: center; font: 400 15px/1.6 var(--font-mono); color: var(--ink-soft); }
-  /* Capture mode (#capture): no chrome and no cursor, for recording the sequence. */
+  /* Capture mode (#capture): no chrome, no cursor and no focus outline, for recording the sequence. */
   .capture .bar, .capture #hint { display: none; }
   .capture #scene { cursor: none; }
+  .capture #scene:focus-visible { outline: none; }
   [hidden] { display: none !important; }
   @media (max-width: 440px) {
     .bar { gap: 8px; }
@@ -1048,8 +1049,16 @@ window.addEventListener('hashchange', () => setCapture(location.hash === '#captu
 
 motionQuery.addEventListener('change', (e) => {
   reduced = e.matches;
-  // The sequence at load stops; one the viewer asked for (Play, capture) cuts from here on.
-  if (reduced && seq) { if (seq.auto) stopAuto(); else seq.cut = true; }
+  // The sequence at load stops. One the viewer asked for (Play, capture) cuts from here on: a glide
+  // under way ends at its eye at once, and the hold there is a cut hold.
+  if (!reduced || !seq) return;
+  if (seq.auto) { stopAuto(); return; }
+  seq.cut = true;
+  if (anim && anim.target) {
+    cam.az = wrapPi(anim.target.az); cam.el = anim.target.el; cam.zoom = anim.target.zoom ?? cam.zoom;
+    anim = null;
+    nextStep();
+  }
 });
 
 // ------------------------------------------------------------------ main loop

@@ -1,6 +1,6 @@
-// npm test: runs every tests/*.test.mjs with node:test in the phases of tests/lib/phases.mjs, the
-// illusion file alone and then the other files two at a time, and prints node:test's spec report
-// for each phase. PAGE (env) passes through to the gate files.
+// npm test: runs every tests/*.test.mjs with node:test in the phases of tests/lib/phases.mjs (the
+// illusion file alone, then the sequence file beside the hygiene scan, then the other files two at
+// a time), and prints node:test's spec report for each phase. PAGE (env) passes through to the gate files.
 // Exit status: 1 when a test fails, a file fails to load, or no test passed (a run that did not
 // happen must not read as green); 0 otherwise.
 import { run } from 'node:test';

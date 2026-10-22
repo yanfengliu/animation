@@ -16,8 +16,8 @@ At load the page plays the sequence once. It glides to each message's angle in t
 
 Add `#capture` to the page's address, for example `index.html#capture`, and load it.
 
-Capture mode hides the buttons, the readout, the hint and the mouse cursor, and loops the sequence for as long as the page stays open. One pass takes about 44 s, so a screen recorder can capture a clean loop.
+Capture mode hides the buttons, the readout, the hint, the mouse cursor and the keyboard focus outline, and loops the sequence for as long as the page stays open. One pass takes about 44 s, so a screen recorder can capture a clean loop.
 
 Clicks, drags, the wheel and keys do not interrupt it. Press Escape to leave capture mode and get the controls back.
 
-With reduced motion turned on in the operating system, the page never glides. Outside capture mode it does not play the sequence at load, and "Find the angle" jumps. Play and capture mode cut from message to message, holding 4 s at each, so one capture pass takes 24 s.
+With reduced motion turned on in the operating system, the page never glides. Outside capture mode it does not play the sequence at load, and "Find the angle" jumps. Play and capture mode cut from message to message, holding 4 s at each, so one capture pass takes 24 s. If reduced motion turns on while Play or capture mode is gliding, the camera cuts straight to the message it was heading for.

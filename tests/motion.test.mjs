@@ -5,8 +5,8 @@
 // press and stays stopped for the 9 s measured; a fling coasts; and with reduced motion there is
 // no tour, no coast in the same page once reduced motion is switched on, and "Find the angle"
 // jumps. A fling's release must land within the page's 60 ms window, so this file never runs
-// beside the illusion file's renders: npm test and tests/mutate.mjs run that file alone first
-// (tests/lib/phases.mjs).
+// beside the illusion file's renders or the sequence file's pages: npm test and tests/mutate.mjs
+// run each of those first, in a phase of its own (tests/lib/phases.mjs).
 // Does not prove how the motion feels (easing, inertia), other browsers or devices, or behaviour
 // under slow frame rates.
 import test, { before, after } from 'node:test';

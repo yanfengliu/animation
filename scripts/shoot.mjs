@@ -21,7 +21,9 @@
 // Prints one line per shot: path, sha256 of the PNG bytes, and what the page reports.
 // Exits 2 before shooting on a malformed option or view: an unknown or repeated key, an empty value,
 // or a value the page would not read as meant (it quietly renders its default for those).
-// Exits 1 when WebGL2 is missing, the page logs an error, or a requested view did not take.
+// Exits 1 when WebGL2 is missing, the page logs an error, or a requested view did not take. A view
+// with capture=1, or with tour=1 and without reduced=1, moves the camera on after its first hold, so
+// its msg, az, el and fov are checked on the first frame the page reports ready, not on the shot.
 
 import { chromium } from 'playwright';
 import { createHash } from 'node:crypto';
@@ -209,6 +211,11 @@ async function shoot(v) {
     await context.close();
     return 1;
   }
+  // Capture mode, and the tour without reduced motion, hold the camera where the query put it for
+  // their first 2 s or 1.5 s and then move it on. For those views msg, az, el and fov are checked on
+  // the first frame the page reports ready; for the others, on the frame shot.
+  const moves = v.capture === '1' || (v.tour === '1' && v.reduced !== '1');
+  const first = await page.evaluate(() => window.__cloud.view());
   const f0 = await page.evaluate(() => window.__cloud.frame);
   const frames = Number(opts.frames);
   await page.waitForFunction((n) => window.__cloud.frame >= n, f0 + frames, { timeout: 20000 });
@@ -217,13 +224,14 @@ async function shoot(v) {
   const wrap = (d) => ((d % 360) + 540) % 360 - 180;
   const reported = state.messages.map((m) => `${m.name}@${m.az},${m.el}`).join(' '), expected = MESSAGES.map((m) => `${m}@${EYES[m].join(',')}`).join(' ');
   if (reported !== expected) problems.push(`the page reports messages ${reported}, but this script knows ${expected}; update EYES`);
+  const set = moves ? first : state.view, when = moves ? 'on its first frame the page reports' : 'the page reports';
   // msg=NAME sets the eye; an az or el given with it overrides that part, and is checked below.
-  if (v.msg !== undefined && v.az === undefined && Math.abs(wrap(state.view.az - EYES[v.msg][0])) > 0.01) problems.push(`msg=${v.msg} did not take: the page reports az ${state.view.az}, not ${EYES[v.msg][0]}`);
-  if (v.msg !== undefined && v.el === undefined && Math.abs(state.view.el - EYES[v.msg][1]) > 0.01) problems.push(`msg=${v.msg} did not take: the page reports el ${state.view.el}, not ${EYES[v.msg][1]}`);
+  if (v.msg !== undefined && v.az === undefined && Math.abs(wrap(set.az - EYES[v.msg][0])) > 0.01) problems.push(`msg=${v.msg} did not take: ${when} az ${set.az}, not ${EYES[v.msg][0]}`);
+  if (v.msg !== undefined && v.el === undefined && Math.abs(set.el - EYES[v.msg][1]) > 0.01) problems.push(`msg=${v.msg} did not take: ${when} el ${set.el}, not ${EYES[v.msg][1]}`);
   if (v.capture === '1' && state.capture !== true) problems.push('capture=1 did not take: the page does not report capture mode');
-  if (v.az !== undefined && Math.abs(wrap(state.view.az - Number(v.az))) > 0.01) problems.push(`az did not take: asked ${v.az}, page reports ${state.view.az}`);
-  if (v.el !== undefined && Math.abs(state.view.el - Number(v.el)) > 0.01) problems.push(`el did not take: asked ${v.el}, page reports ${state.view.el}${Math.abs(Number(v.el)) > 70 ? ' (the page clamps elevation to ±70)' : ''}`);
-  if (v.fov !== undefined && Math.abs(state.view.fov - Number(v.fov)) > 0.05) problems.push(`fov did not take: asked ${v.fov}, page reports ${state.view.fov.toFixed(2)} (zoom limits?)`);
+  if (v.az !== undefined && Math.abs(wrap(set.az - Number(v.az))) > 0.01) problems.push(`az did not take: asked ${v.az}, ${when} ${set.az}`);
+  if (v.el !== undefined && Math.abs(set.el - Number(v.el)) > 0.01) problems.push(`el did not take: asked ${v.el}, ${when} ${set.el}${Math.abs(Number(v.el)) > 70 ? ' (the page clamps elevation to ±70)' : ''}`);
+  if (v.fov !== undefined && Math.abs(set.fov - Number(v.fov)) > 0.05) problems.push(`fov did not take: asked ${v.fov}, ${when} ${set.fov.toFixed(2)} (zoom limits?)`);
   // The page does not report β; beta=0 must leave no text particles, so a page that ignores beta shows here.
   if (v.beta !== undefined && Number(v.beta) === 0 && state.counts.text !== 0) problems.push(`beta=0 did not take: the page reports ${state.counts.text} text particles`);
   const name = v.name || ['shot', `${vw}x${vh}@${dpr}`, v.msg && `msg-${v.msg}`, `az${v.az ?? 'def'}`, `el${v.el ?? 'def'}`, v.fov && `fov${v.fov}`, `t${t}`, v.beta !== undefined && `beta${v.beta}`, v.layer, v.textof && `of-${v.textof}`, v.capture === '1' && 'capture'].filter(Boolean).join('_');

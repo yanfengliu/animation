@@ -10,8 +10,8 @@
 // canvas; Chromium's accessibility tree exposes the canvas as a focusable application with a role
 // description and a name that says what it shows and how to steer; without WebGL2 a message shows
 // and the page never reports ready. Each page's context is closed as soon as its check is done.
-// The timing check never runs beside the illusion file's renders: npm test and tests/mutate.mjs
-// run that file alone first (tests/lib/phases.mjs).
+// The timing check never runs beside the illusion file's renders or the sequence file's pages:
+// npm test and tests/mutate.mjs run each of those first, in a phase of its own (tests/lib/phases.mjs).
 // Does not prove other browsers, real GPUs, fonts loading over a real network, or how a screen
 // reader behaves with the canvas (none is available here; the role is what tells NVDA and JAWS
 // to pass the arrow keys through).
