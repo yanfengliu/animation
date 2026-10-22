@@ -360,17 +360,20 @@ export function lumOver(img, base) {
 // that channel over the luminance sum, counting only the pixels where no channel of `img` is at 255.
 // The 8-bit target clips a dense stroke's blue first, so a clipped pixel holds less of its light
 // in some channels than in others; leaving those pixels out keeps the balance of the light that
-// was drawn. Returns the three shares, the luminance sum they come from and the share of `img`'s
-// lit pixels left out.
+// was drawn. Returns the three shares, the luminance sum they come from, the share of `img`'s lit
+// pixels left out and the share of its light over `base` (per-pixel luminance, clamped at 0) that
+// those pixels hold.
 export function balanceOver(img, base) {
   const a = img.rgb, b = base.rgb;
-  let r = 0, g = 0, bl = 0, lit = 0, clipped = 0;
+  let r = 0, g = 0, bl = 0, lit = 0, clipped = 0, all = 0, out = 0;
   for (let o = 0; o < a.length; o += 3) {
     if (a[o] === b[o] && a[o + 1] === b[o + 1] && a[o + 2] === b[o + 2]) continue;
     lit++;
-    if (a[o] === 255 || a[o + 1] === 255 || a[o + 2] === 255) { clipped++; continue; }
+    const l = Math.max(0, 0.2126 * (a[o] - b[o]) + 0.7152 * (a[o + 1] - b[o + 1]) + 0.0722 * (a[o + 2] - b[o + 2]));
+    all += l;
+    if (a[o] === 255 || a[o + 1] === 255 || a[o + 2] === 255) { clipped++; out += l; continue; }
     r += a[o] - b[o]; g += a[o + 1] - b[o + 1]; bl += a[o + 2] - b[o + 2];
   }
   const L = 0.2126 * r + 0.7152 * g + 0.0722 * bl;
-  return { r: r / L, g: g / L, b: bl / L, light: L, clipped: lit ? clipped / lit : 0 };
+  return { r: r / L, g: g / L, b: bl / L, light: L, clipped: lit ? clipped / lit : 0, clippedLight: all ? out / all : 0 };
 }

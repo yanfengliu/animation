@@ -445,7 +445,9 @@ function buildCloud(M) {
   // its own sight line, an ambient one along the line from a home eye drawn by the shares w_m/Σw
   // (any eye when no message wants it), so off-angle each message's text particles move with the
   // particles around them. The shares do not depend on β, so the homes are the same for every β.
-  const n = M.length;
+  // Test hook: relocate=<name> moves only that message's particles, the same ones onto the same
+  // points; a particle another message would take stays where the base cloud put it, as ambient.
+  const n = M.length, only = M.findIndex((m) => m.name === params.get('relocate'));
   const pick = makeRandom('relocate:' + seed), homes = makeRandom('home:' + seed);
   const lands = M.map((m, k) => gaussian(makeRandom((k ? `land${k}:` : 'land:') + seed)));
   const owner = new Int8Array(N_TOTAL).fill(-1);    // the message of each text particle
@@ -480,6 +482,7 @@ function buildCloud(M) {
     for (let k = 0; k < n; k++) {
       acc += BETA * w[k] / scaleDown;
       if (chance >= acc) continue;
+      if (only >= 0 && k !== only) break;
       const { sigma, S } = M[k].mask;
       for (let tries = 0; tries < 64; tries++) {
         const vx = ux[k] + sigma * lands[k](), vy = uy[k] + sigma * lands[k]();

@@ -27,16 +27,22 @@
 //   letters lean right by 14° ± 4°;
 // - at 390×844 every message's strokes, measured across the full width, stay at least 8 px inside
 //   the frame; hello world's text layer at E holds still over time and zoom only scales it;
-// - no message shows away from its eye: at its two neighbours' eyes and midway to each, its strokes
-//   are no brighter, over its gaps, than in the same view without relocation (beta=0) by more than
-//   HIDE_MARGIN (seed 1); for hello world also at 25° above and below E and midway to its neighbours,
-//   by more than HW_HIDE_MARGIN as a mean over seeds 1–3; hello world's own text layer at az+25 is
-//   a smear that changes with the seed;
+// - no message shows away from its eye: at each of the other five eyes and midway to each of its
+//   two neighbours (seed 1), and at its antipode (az+180°, −el), at the three far views and for hello
+//   world also 25° above and below E (means over seeds 1–3), relocation lifts the
+//   stroke/gap ratio on the message's ghost mask at most MAX_GHOST_LIFT× over the same view at
+//   beta=0. The ghost mask is laid at that view, from that message's own text layer there for
+//   OTHER_SEED, so it follows wherever the message's particles gather there (a mirrored, radially
+//   smeared copy near its antipode), and only shape that repeats across seeds, the message's, lifts
+//   the ratio of seeds 1–3; hello world's own text layer at az+25 is a smear that changes with the seed;
 // - every particle renders alike at every angle (owner directive, 2026-10-11): at E, 3° (el+3), 12°
 //   (az−12, 11.6° from E) and three far views at least 40° from every eye, at t 0 and 7.3, and at the
 //   other five eyes at t 0, the text particles carry the light (within LIGHT_BAND) and the colour
-//   balance (red, green and blue each within 3%, over pixels no channel clips) of the same particles
-//   drawn as ambient, and at t 0 their sprite size (within 15%); the shipped render minus the sky
+//   balance (red, green and blue each within 3%, over pixels no channel clips, which may be at most
+//   MAX_CLIPPED of each image's lit pixels) of the same particles drawn as ambient, and at t 0 their
+//   sprite size (within 15%); at each eye, at OWN_BETA, that message's own particles carry the light
+//   of the same particles drawn as ambient (within OWN_LIGHT_BAND), so a reveal in one message's
+//   particles is not diluted by the other five; the shipped render minus the sky
 //   equals the text layer minus the sky plus the ambient layer minus the sky, pixel by pixel and
 //   channel by channel, capped at 255 as the 8-bit target caps it (residual at most 0.1% of their
 //   light in each channel; exactly 0 measured), so the shipped draw is the one those comparisons
@@ -51,7 +57,8 @@
 //   row and column residual of a render minus its beta-0 twin stays within STREAK_K× each seed's
 //   floor, the mean residual at two far control views (seeds 1–3), and the floor stays below
 //   MAX_STREAK_FLOOR; at el±25, where the text columns are the accepted cost, the column residual
-//   stays below MAX_EL_STREAK× the floor (seeds 1–3), which is what the 14° lean buys;
+//   stays below MAX_EL_STREAK× the floor and below MAX_EL_STREAK_ABS× the cloud's own noise (seeds
+//   1–3), which is what the 14° lean buys;
 // - the same seed builds the same cloud and another seed a different one.
 // Re-measure, do not retune: every bound sits between the real page and its mutants as measured for
 // seeds 1–3 and checked for seeds 4–12 (values beside each threshold; "in threes" means the mean
@@ -72,8 +79,12 @@
 // reveal driven by the particle clock, since every shot freezes it with t, which the shipped page
 // never sets; a reveal shown only on a URL without t, as a visitor's is, since every view here sets t
 // and every view but the tour's sets az and el too; a reveal confined to angles between the measured
-// views (for example only 5–10° from an eye); a light reveal of up to 5% or a fall of up to 7%, a
-// colour shift of up to 3% in a channel or a size change of up to 15%, which the bands pass. Nor does
+// views (for example only 5–10° from an eye); a light reveal of up to 5% (8% at E, where the 8-bit
+// cap holds the ratio at 0.97: text 1.08× brighter near E reads 1.038) or a fall of up to 7%, a
+// colour shift of up to 3% in a channel or a size change of up to 15%, which the bands pass; a colour
+// change in the pixels the colour check leaves out (at most MAX_CLIPPED of each image's lit pixels,
+// but at E they hold 32% of the text layer's light), or one confined to one message's particles,
+// whose share of the whole text layer dilutes it (only their light is compared on its own). Nor does
 // it hold β at 0.85 (review round 3, F25; the lesson is in docs/learning/lessons.md).
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -84,17 +95,19 @@ import { MESSAGES, midpoint } from './lib/messages.mjs';
 // Thresholds, each set from the real page and the mutants in tests/mutate.mjs (comments give the
 // measured values, real page first, at 1280×800 and seed 1 unless named).
 const MIN_RATIO = 1.5;           // stroke/gap luminance at each eye: 1.551–2.082 real (six messages, seeds 1–12, both viewports; ≥ 1.698 for seed 1); 1.344–1.491 β 0.2, 1.304–1.472 "What" formed 6° off its eye
-const MIN_LIFT = 1.45;           // that ratio over the beta-0 render's on the same mask: 1.532–2.046 real (six messages, seeds 1–12, both viewports); 1.334–1.453 β 0.2, 1.184–1.294 "What" 6° off, 1.029–1.133 no relocation, 1.200–1.440 no density compensation
+const MIN_LIFT = 1.45;           // that ratio over the beta-0 render's on the same mask: 1.532–2.046 real (six messages, seeds 1–12, both viewports); 1.334–1.453 β 0.2, 1.184–1.294 "What" 6° off, 1.029–1.133 no relocation, 1.222–1.424 for "What", "a", "beautiful" and "world" without density compensation (at about the page's particle counts)
 const MIN_SEED_IOU = 0.65;       // strokes, default seed vs OTHER_SEED: 0.777–0.912 real (six messages, seeds 1–12 but 8, both viewports); 0.503–0.545 "What" 6° off, 0.238–0.413 no relocation
 const MIN_MASK = { strokes: 3000, gaps: 1500 }; // pixels a mask needs to be measured: ≥ 3942 strokes ("a") and ≥ 2396 gaps ("beautiful") at 390×844 real (seeds 1–12)
 const MIN_TIME_IOU = 0.8;        // hello world's strokes t=0 vs later: 0.943 and 0.941 real (t 7.3 and 31); 0.531 when text particles drift across their sight lines
 const MIN_SCALE_IOU = 0.7;       // zoomed strokes vs base strokes scaled: 0.950 (fov 32) and 0.942 (fov 80) real; 0.373 and 0.460 when zoom dollies the eye
-const HIDE_MARGIN = 0.3;         // a message's stroke/gap ratio at a neighbour's eye or midway to it, over the same view's at beta=0 (seed 1): ≤ 0.157 real for seed 1 ("beautiful" midway to "world"), ≤ 0.211 for any of seeds 1–12 ("a" midway to "What"); flat text 0.744 for hello world at el+25 and 0.367 at el−25
-const HW_HIDE_MARGIN = 0.15;     // the same for hello world, mean over seeds 1–3, midway to its neighbours and at el±25: ≤ 0.066 real (≤ 0.083 in threes); flat text 0.694 at el+25 and 0.382 at el−25
+const MAX_GHOST_LIFT = 1.33;     // a message's stroke/gap ratio on its ghost mask away from its eye, over the same view's at beta=0 (mean over seeds 1–3; seed 1 alone at the other eyes and midway to the neighbours): ≤ 1.269 real ("beautiful" at its antipode; ≤ 1.297 in threes, mask seeds 13–15), and for seed 1 ≤ 1.175 at the other eyes and ≤ 1.174 midway (≤ 1.195 and ≤ 1.257 for any one of seeds 1–12); 1.376 with "world" at half its depth spread (at its antipode), up to 1.78 with the later five at a third of theirs and up to 1.78 without density compensation, up to 2.59 with flat text
 const MAX_SMEAR_E_IOU = 0.25;    // hello world's text layer at az+25 vs its E strokes: 0.096 real, 0.107 flat text (a coarse guard; the seed check tells them apart)
 const MAX_SMEAR_SEED_IOU = 0.3;  // that text layer, seed vs seed: 0.167 real; 0.839 flat text, 1.000 when the seed is ignored
-const LIGHT_BAND = [0.93, 1.05]; // text / as-ambient light of the same particles: 0.955–1.015 real (seeds 1–6, every alike view, t 0; 0.970–1.013 for seed 1 at t 0 and 7.3), lowest at the eyes, where the 8-bit target clips the densest strokes (5–7% of the text layer's lit pixels); no mutant dims the text. 1.174 at E with text 1.25× brighter near E, 1.209 at the eye of "a" with the same near "a", 1.456 with text sprites 1.25× wider, 1.123 with their blur cut 75%, 1.287 with text 1.4× brighter everywhere
+const LIGHT_BAND = [0.93, 1.05]; // text / as-ambient light of the same particles: 0.955–1.015 real (seeds 1–6, every alike view, t 0; 0.970–1.013 for seed 1 at t 0 and 7.3), lowest at the eyes, where the 8-bit target clips the densest strokes (5–7% of the text layer's lit pixels); 0.910 at E without density compensation. 1.174 at E with text 1.25× brighter near E, 1.209 at the eye of "a" with the same near "a", 1.456 with text sprites 1.25× wider, 1.123 with their blur cut 75%, 1.287 with text 1.4× brighter everywhere
 const CHANNEL_BAND = [0.97, 1.03]; // text / as-ambient colour balance (each channel's share of the light over pixels where no channel clips) in each of red, green and blue: 0.998–1.001 real (seeds 1–6, every alike view, t 0), where the raw per-channel ratio falls to 0.909 in blue at E from clipping alone; 0.733/1.102/0.735 at E with a green tint near E (red and blue × 0.739, green × 1.10, R5-1) and 1.106/0.989/0.854 with a 30% gold tint near E
+const MAX_CLIPPED = 0.08;        // share of an image's lit pixels that the colour balance leaves out because a channel is at 255 (blue saturates first), text layer and as-ambient alike: ≤ 0.0692 and ≤ 0.0697 real (seeds 1–6, every alike view; 0.0622 for the text layer at E, whose left-out pixels hold 32% of its light); 0.109 at E with text particles tinted blue near E (blue × 1.5, red and green × 0.96), 0.116 without density compensation, 0.083 with upright letters in depth layers
+const OWN_BETA = 0.2;            // each message's own particles at its eye are compared at this beta: their strokes are sparse enough that few pixels clip (≤ 3.1% for hello world, ≤ 19% for "a", seeds 1–6), where at the default β ¼ to ⅓ of their lit pixels clip and the ratio falls to 0.85
+const OWN_LIGHT_BAND = [0.95, 1.12]; // a message's own text particles at its eye over the same particles drawn as ambient, at OWN_BETA: 1.009–1.057 real (six messages, seeds 1–6), above 1 because the as-ambient image is the dense cloud's difference and loses more to the 8-bit cap; 1.253 at the eye of "a" when only its particles brighten 1.25× near it, whose whole text layer there reads 0.991; 1.164 for "world" at half its depth spread, which brings its particles into focus, and 1.12–1.25 for the later five at a third of theirs
 const SIZE_BAND = [0.85, 1.15];  // text / as-ambient effective sprite area at SPARSE_BETA: 0.943–1.044 real (seeds 1–6, every alike view); 1.425 at E with text sprites 1.25× wider near E
 const MAX_RESIDUAL = 0.001;      // per channel, Σ|render − prediction| over the predicted light, for the shipped render against text layer + ambient layer − sky, and for each camera-mode shot against E set by URL: exactly 0 real (seeds 1–6, every alike view, t 0; seed 1 also at t 7.3; and every mode shot); worst channel 0.070 at E with a 30% gold tint near E in the shipped draw only and 0.124 with a second text pass there; in the mode shots 0.144 with text 1.25× brighter during the tour, late in its hold, after a glide or after 5 s idle at E, and 0.076 with a gold tint after a glide
 const SCENE_BAND = [0.85, 1.15]; // scene particle light at E, 3°, 12° and each other eye over its mean at the far views: 0.927–1.103 real (seeds 1–3, t 0); 1.265 at E with every particle 1.4× brighter near E
@@ -106,8 +119,15 @@ const DWELL_MS = 8000;           // idle at E after the glide before the second 
 const TOUR_SHOT_MS = 6600;       // the earliest tour shot, from the page's first frame, and it waits until HOLD_LEAD_MS after the camera reached E if that is later: about 1.5 s into the hold. Run last with the render queue drained, the state reads and screenshot take about 0.8–1 s at 1280×800, so the shot ends about 0.6 s before the hold does; the late-in-hold mutant reveals once the hold has run 1.2 s
 const HOLD_LEAD_MS = 1500;       // the shot must start at least this long after the camera reached E, as the page's own frames report it
 const MAX_STREAK_FLOOR = 1.9;    // the floor (mean row and column residual at the two far controls), mean over seeds 1–3: 1.286 real (1.308–1.383 in threes); 2.769 flat text
-const STREAK_K = 1.8;            // row and column residual over each seed's floor midway to hello world's neighbours and at its back view, mean: ≤ 1.33 real (≤ 1.52 in threes); no mutant reaches it (slant-5 1.78 and upright letters 1.67 in the back view's columns, no density compensation ≤ 1.29)
+const STREAK_K = 1.8;            // row and column residual over each seed's floor midway to hello world's neighbours and at its back view, mean: ≤ 1.33 real (≤ 1.52 in threes); 1.863 in the rows midway to the face when hello world takes twice the relocation chance (13,920 text particles, not 9,083); 1.78 slant-5 and 1.67 upright letters in the back view's columns
+// The six messages relocate 30,254 of the 48,000 particles, so relocation leaves texture everywhere:
+// the floor is 1.29 (1.31–1.38 in threes), where the hello-world-only page measured 0.94 at its own
+// controls. The el±25 columns rose with it, to 1.73 and 1.93 over the cloud's own noise (up to 2.24
+// at el−25 in threes), past that page's absolute bound of 1.95, while over the floor they measure
+// 1.35 and 1.50. So the lean is held over the floor and, so that a rising floor cannot carry the
+// columns with it, over the cloud's own noise too.
 const MAX_EL_STREAK = 1.9;       // column residual over the floor at el+25 and at el−25, mean: 1.348 and 1.495 real (≤ 1.39 and ≤ 1.71 in threes); 2.267 and 2.128 upright letters, 2.062 and 2.108 with a 5° lean
+const MAX_EL_STREAK_ABS = 2.35;  // that column residual over the cloud's own noise, mean: 1.734 and 1.927 real (≤ 1.90 and ≤ 2.24 in threes); 2.719 and 2.552 upright letters, 2.468 and 2.521 with a 5° lean, and 2.838 and 2.698 with upright letters in depth layers, whose floor rises to 1.682 so that over it they read only 1.697 and 1.616
 const SLANT_DEG = 14;            // the letters' lean (SLANT in index.html), undone before the layout is measured
 const LINE_WIDTH_RATIO = [0.76, 0.92]; // top/bottom line width at E, lean undone: 0.851 real (0.846–0.853 for seeds 1–12; 0.849 and 0.856 with a 5° lean and upright letters); 1.175 turned 180°, 0.587 with no relocation
 const FULL_STEM = 0.8;           // end-strip height / line height at "h" and "d", lean undone: 0.98 and 0.97 real (≥ 0.92 for seeds 1–12); 0.48 and 0.64 mirrored (its letters lean left, "o" and "w" are there), 0.69 and 0.64 with upright letters, 0.74 at "h" without density compensation; a 5° lean keeps 0.95 and 0.96, which MAX_LEAN catches
@@ -131,19 +151,31 @@ const BACK = { az: E.az + 180, el: -E.el };
 const MIDS = MESSAGES.map((m, k) => midpoint(m, MESSAGES[(k + 1) % MESSAGES.length]));   // MIDS[k]: midway from message k to the next
 const FAR = [['far (68°, 60°)', { az: 68, el: 60 }], ['far (188°, −45°)', { az: 188, el: -45 }], ['far (308°, −45°)', { az: 308, el: -45 }]];   // at least 40° from every eye
 // The query for view w: tour off, the clock frozen at t, and the other parameters when given.
-const Q = (w, { t = 0, fov, seed = 1, beta, layer, textof } = {}) => [`az=${w.az}`, `el=${w.el}`, 'tour=0', `t=${t}`, fov !== undefined && `fov=${fov}`, seed !== 1 && `seed=${seed}`, beta !== undefined && `beta=${beta}`, layer && `layer=${layer}`, textof && `textof=${textof}`].filter(Boolean).join('&');
+const Q = (w, { t = 0, fov, seed = 1, beta, layer, textof, relocate } = {}) => [`az=${w.az}`, `el=${w.el}`, 'tour=0', `t=${t}`, fov !== undefined && `fov=${fov}`, seed !== 1 && `seed=${seed}`, beta !== undefined && `beta=${beta}`, layer && `layer=${layer}`, textof && `textof=${textof}`, relocate && `relocate=${relocate}`].filter(Boolean).join('&');
 // The sky alone at view w: beta=0 relocates nothing, so its text layer draws no particles. It does
 // not depend on t or the seed, and keeps the view's readout text.
 const SKY = (w, fov) => Q(w, { fov, beta: 0, layer: 'text' });
 const named = (w) => `(${w.az}°, ${w.el}°)`;
 // Each message's text layer and the sky, the same at another seed, the full render and its beta-0 twin.
 const legibilityViews = (w, name, o = {}) => [Q(w, { ...o, layer: 'text', textof: name }), Q(w, { ...o, seed: OTHER_SEED, layer: 'text', textof: name }), SKY(w, o.fov), Q(w, o), Q(w, { ...o, beta: 0 })];
-// A message's views away from its eye: its two neighbours' eyes and midway to each.
-const away = (k) => {
-  const n = MESSAGES.length, prev = MESSAGES[(k + n - 1) % n], next = MESSAGES[(k + 1) % n];
-  return [[`the eye of "${prev.name}"`, prev], [`midway to "${prev.name}"`, MIDS[(k + n - 1) % n]], [`midway to "${next.name}"`, MIDS[k]], [`the eye of "${next.name}"`, next]];
-};
-const HW_AWAY = [['midway to "world"', MIDS[MESSAGES.length - 1]], ['midway to the face', MIDS[0]], ['el+25', at(0, 25)], ['el−25', at(0, -25)]];
+// Where no message may show, each as { m, where, w, seeds }: every message at the other five eyes
+// and midway to each of its neighbours, where the sequence holds and glides (seed 1, since one seed
+// there measures far inside the bound), and at its antipode and the far views as means over seeds
+// 1–3; hello world also at el±25. Each eye sits about 34° above another message's antipode.
+const antipode = (m) => ({ az: (m.az + 180) % 360, el: -m.el });
+const GHOSTS = MESSAGES.flatMap((m, k) => {
+  const n = MESSAGES.length, prev = (k + n - 1) % n, next = (k + 1) % n;
+  return [
+    ...MESSAGES.filter((o) => o !== m).map((o) => [`the eye of "${o.name}"`, o, [1]]),
+    [`midway to "${MESSAGES[prev].name}"`, MIDS[prev], [1]], [`midway to "${MESSAGES[next].name}"`, MIDS[k], [1]],
+    ['its antipode', antipode(m), SEEDS],
+    ...FAR.map(([name, w]) => [name, w, SEEDS]),
+    ...(k === 0 ? [['el+25', at(0, 25), SEEDS], ['el−25', at(0, -25), SEEDS]] : []),
+  ].map(([where, w, seeds]) => ({ m, where, w: { az: w.az, el: w.el }, seeds }));
+});
+const ghostViews = (g) => [SKY(g.w), Q(g.w, { seed: OTHER_SEED, layer: 'text', textof: g.m.name }), ...g.seeds.flatMap((seed) => [Q(g.w, { seed }), Q(g.w, { seed, beta: 0 })])];
+// Each message's own particles at its eye, drawn as text and as ambient at OWN_BETA.
+const ownViews = (m) => [SKY(m), Q(m, { beta: 0 }), Q(m, { beta: OWN_BETA, layer: 'text', textof: m.name }), Q(m, { beta: OWN_BETA, layer: 'ambient', relocate: m.name })];
 const ALIKE_TIMES = ['0', '7.3'];
 // The alike views: near E and far, at both times; the other eyes at t 0. The first three are near E.
 const ALIKE = (time) => [['E', E], ['3° (el+3)', at(0, 3)], ['12° (az−12)', at(-12, 0)], ...FAR, ...(time === '0' ? MESSAGES.slice(1).map((m) => [`the eye of "${m.name}"`, { az: m.az, el: m.el }]) : [])];
@@ -240,12 +272,9 @@ before(async () => {
     blind: [blind, legibilityViews(E, HW.name)],
     zoom: [wide, [Q(E, { layer: 'text', textof: HW.name }), SKY(E), Q(E), ...[32, 80].flatMap((fov) => legibilityViews(E, HW.name, { fov }))]],
     still: [wide, [SKY(E), ...['0', '7.3', '31'].map((t) => Q(E, { t, layer: 'text', textof: HW.name }))]],
-    hidden: [wide, [
-      ...MESSAGES.flatMap((m, k) => [Q(m, { layer: 'text', textof: m.name }), SKY(m), ...away(k).flatMap(([, w]) => [Q(w), Q(w, { beta: 0 })])]),
-      ...SEEDS.flatMap((seed) => [Q(E, { seed, layer: 'text', textof: HW.name }), ...HW_AWAY.flatMap(([, w]) => [Q(w, { seed }), Q(w, { seed, beta: 0 })])]),
-    ]],
+    ghost: [wide, GHOSTS.flatMap(ghostViews)],
     smear: [wide, [Q(E, { layer: 'text', textof: HW.name }), SKY(E), Q(at(25, 0), { layer: 'text', textof: HW.name }), Q(at(25, 0), { seed: OTHER_SEED, layer: 'text', textof: HW.name })]],
-    alike: [wide, ALIKE_TIMES.flatMap((time) => ALIKE(time).flatMap(([, w]) => alikeViews(w, time, time === '0')))],
+    alike: [wide, [...ALIKE_TIMES.flatMap((time) => ALIKE(time).flatMap(([, w]) => alikeViews(w, time, time === '0'))), ...MESSAGES.flatMap(ownViews)]],
     streak: [wide, SEEDS.flatMap((seed) => Object.values(STREAK).flat().flatMap(([, w]) => [Q(w, { seed }), Q(w, { seed, beta: 0 })]))],
     modes: [wide, [Q(E), SKY(E)]],
   };
@@ -394,38 +423,32 @@ test('hello world\'s text layer at E holds still over time', async (t) => {
   }
 });
 
-// Each message's strokes are measured on its own mask from its eye, in the full render at a view
-// away from it and in that view's beta-0 twin (the same cloud, nothing relocated): the excess is
-// what relocation adds there. At a neighbour's eye the neighbour's own strokes light some pixels of
-// the mask, so the excess there includes where the two messages overlap. Hello world is also
-// measured at el±25 and midway to its neighbours as a mean over seeds 1–3, each seed on its own mask.
-test('no message shows at its neighbours\' eyes or midway to them; hello world also from 25° above and below (seeds 1–3)', async (t) => {
-  await need(P.hidden);
-  const excess = async (w, mask, seed = 1) => strokeGapRatio((await view(wide, Q(w, { seed }))).lum, mask) - strokeGapRatio((await view(wide, Q(w, { seed, beta: 0 }))).lum, mask);
-  const broken = [], lines = [];
-  for (const [k, m] of MESSAGES.entries()) {
-    const mask = await textMask(wide, m, m.name);
-    const row = [];
-    for (const [name, w] of away(k)) {
-      const x = await excess(w, mask);
-      row.push(`${name} ${x.toFixed(3)}`);
-      if (!(x <= HIDE_MARGIN)) broken.push(`"${m.name}" at ${name} ${named(w)}: its stroke/gap ratio exceeds the same view's at beta=0 by ${x.toFixed(3)}, more than ${HIDE_MARGIN}`);
-    }
-    lines.push(`"${m.name}": excess over beta=0 at ${row.join(', ')}`);
+// A message's ghost at a view away from its eye: wherever its particles gather there, which near its
+// antipode is a mirrored, radially smeared copy. The mask is laid at that view, from the message's
+// own text layer over the sky for OTHER_SEED (an independent cloud), so seed 1–3's own particle
+// clumps do not select it. The full render's stroke/gap ratio on it, over its beta-0 twin's (the
+// same cloud, nothing relocated), is how much relocation lifts that shape there: only shape that
+// follows the message repeats across seeds. Every other message's relocation shows in the full render
+// too, so where two ghosts overlap the lift counts both.
+test('no message shows away from its eye: at the other eyes and midway to its neighbours (seed 1), at its antipode and at the far views (seeds 1–3)', async (t) => {
+  await need(P.ghost);
+  const broken = [], rows = [];
+  for (const g of GHOSTS) {
+    const sky = await view(wide, SKY(g.w)), tx = await view(wide, Q(g.w, { seed: OTHER_SEED, layer: 'text', textof: g.m.name }));
+    const mask = strokeMask(lumOver(tx.img, sky.img), tx.img.width, tx.img.height);
+    const lifts = [];
+    for (const seed of g.seeds) lifts.push(strokeGapRatio((await view(wide, Q(g.w, { seed }))).lum, mask) / strokeGapRatio((await view(wide, Q(g.w, { seed, beta: 0 }))).lum, mask));
+    rows.push({ ...g, lifts, lift: mean(lifts), strokes: mask.strokes, gaps: mask.gaps });
   }
-  const per = [];
-  for (const seed of SEEDS) {
-    const mask = await textMask(wide, E, HW.name, undefined, { seed });
-    const x = {};
-    for (const [name, w] of HW_AWAY) x[name] = await excess(w, mask, seed);
-    per.push({ seed, x });
+  for (const m of MESSAGES) t.diagnostic(`"${m.name}": lift over beta=0 on its ghost mask ${rows.filter((r) => r.m === m).map((r) => `${r.where} ${r.lift.toFixed(3)}${r.seeds.length > 1 ? ` (${r.lifts.map((x) => x.toFixed(3)).join('/')})` : ''}`).join(', ')}`);
+  // The antipodes' streaks, for the record (the streak test gates hello world's).
+  for (const m of MESSAGES.slice(1)) {
+    const w = antipode(m), s = [];
+    for (const seed of SEEDS) s.push(streakResidual((await view(wide, Q(w, { seed }))).lum, (await view(wide, Q(w, { seed, beta: 0 }))).lum, 1280, 800));
+    t.diagnostic(`"${m.name}" at its antipode ${named(w)}: row/column residual over the cloud's own noise ${mean(s.map((x) => x.row)).toFixed(3)}/${mean(s.map((x) => x.col)).toFixed(3)} (mean over seeds ${SEEDS.join(', ')})`);
   }
-  for (const l of lines) t.diagnostic(l);
-  for (const p of per) t.diagnostic(`hello world, seed ${p.seed}: excess over beta=0 ${Object.entries(p.x).map(([n, v]) => `${n} ${v.toFixed(3)}`).join(', ')}`);
-  for (const [name, w] of HW_AWAY) {
-    const x = mean(per.map((p) => p.x[name]));
-    t.diagnostic(`hello world, mean over seeds ${SEEDS.join(', ')}: ${name} ${x.toFixed(3)}`);
-    if (!(x <= HW_HIDE_MARGIN)) broken.push(`hello world at ${name} ${named(w)}: its stroke/gap ratio exceeds the same view's at beta=0 by ${x.toFixed(3)} (mean over seeds ${SEEDS.join(', ')}), more than ${HW_HIDE_MARGIN}`);
+  for (const r of rows) {
+    if (!(r.lift <= MAX_GHOST_LIFT)) broken.push(`"${r.m.name}" at ${r.where} ${named(r.w)}: relocation lifts the stroke/gap ratio on its ghost mask ${r.lift.toFixed(3)}× over the same view at beta=0 (${r.seeds.length > 1 ? `mean over seeds ${r.seeds.join(', ')}` : `seed ${r.seeds[0]}`}; mask ${r.strokes} stroke and ${r.gaps} gap pixels), more than ${MAX_GHOST_LIFT}×, so its shape shows there`);
   }
   assertNone(broken, 'away from its eye no message may show, but ');
 });
@@ -458,7 +481,18 @@ async function drawnBothWays(w, time, beta) {
   const sky = (await view(wide, SKY(w))).img, tx = (await view(wide, Q(w, { ...b, layer: 'text' }))).img;
   const full0 = (await view(wide, Q(w, { ...o, beta: 0 }))).img, amb = (await view(wide, Q(w, { ...b, layer: 'ambient' }))).img;
   const t = lightOver(tx, sky), a = lightOver(full0, amb), bt = balanceOver(tx, sky), ba = balanceOver(full0, amb);
-  return { light: t.light / a.light, channels: [bt.r / ba.r, bt.g / ba.g, bt.b / ba.b], size: t.area / a.area, clipped: [bt.clipped, ba.clipped] };
+  return { light: t.light / a.light, channels: [bt.r / ba.r, bt.g / ba.g, bt.b / ba.b], size: t.area / a.area, clipped: [bt.clipped, ba.clipped], clippedLight: [bt.clippedLight, ba.clippedLight] };
+}
+// One message's own particles at its eye m, drawn both ways at OWN_BETA: its text layer alone
+// (textof) over the sky, and the beta-0 render minus the ambient layer of a cloud where relocation
+// moves only that message's particles (relocate), which holds the same particles drawn as ambient
+// where they started. The whole text layer at an eye holds all six messages' particles, so a reveal
+// in one message's would be diluted there. Returns text over as-ambient light.
+async function ownBothWays(m) {
+  const img = async (q) => (await view(wide, q)).img;
+  const sky = await img(SKY(m)), tx = await img(Q(m, { beta: OWN_BETA, layer: 'text', textof: m.name }));
+  const full0 = await img(Q(m, { beta: 0 })), amb = await img(Q(m, { beta: OWN_BETA, layer: 'ambient', relocate: m.name }));
+  return lightOver(tx, sky).light / lightOver(full0, amb).light;
 }
 // The comparisons above read only the test-only draws (layer=text, layer=ambient, beta=0). The
 // shipped draw (no layer) adds both classes in one pass. The page blends ONE/ONE into an 8-bit
@@ -483,17 +517,22 @@ test('every particle renders alike at every angle: no reveal near any eye', asyn
     for (const [k, [name, w]] of ALIKE(time).entries()) {
       const d = await drawnBothWays(w, time), s = time === '0' ? await drawnBothWays(w, time, SPARSE_BETA) : null;
       const sh = await shipped(w, time);
-      here.push({ name: `${name} t=${time}`, near: k < 3 || k >= 3 + FAR.length, light: d.light, channels: d.channels, clipped: d.clipped, size: s?.size, identity: sh.identity, scene: sh.full });
+      here.push({ name: `${name} t=${time}`, near: k < 3 || k >= 3 + FAR.length, light: d.light, channels: d.channels, clipped: d.clipped, clippedLight: d.clippedLight, size: s?.size, identity: sh.identity, scene: sh.full });
     }
     const far = mean(here.filter((r) => !r.near).map((r) => r.scene));
     for (const r of here) rows.push({ ...r, scene: r.scene / far });
   }
-  for (const r of rows) t.diagnostic(`${r.name}: text/as-ambient light ${r.light.toFixed(3)}, colour balance r/g/b ${rgb(r.channels)} (clipped pixels left out: ${(100 * r.clipped[0]).toFixed(1)}% of the text layer's, ${(100 * r.clipped[1]).toFixed(1)}% of the as-ambient's)${r.size === undefined ? '' : `, sprite size ratio (beta ${SPARSE_BETA}) ${r.size.toFixed(3)}`}, shipped − (text + ambient − sky) residual r/g/b ${rgb(r.identity.abs)} (signed ${rgb(r.identity.signed)}, ${(100 * r.identity.off).toFixed(3)}% of pixels off by more than 2 levels), scene light / far mean ${r.scene.toFixed(3)}`);
+  const own = [];
+  for (const m of MESSAGES) own.push({ name: `"${m.name}" at its eye`, light: await ownBothWays(m) });
+  for (const r of rows) t.diagnostic(`${r.name}: text/as-ambient light ${r.light.toFixed(3)}, colour balance r/g/b ${rgb(r.channels)} (clipped pixels left out: ${(100 * r.clipped[0]).toFixed(1)}% of the text layer's, holding ${(100 * r.clippedLight[0]).toFixed(1)}% of its light, and ${(100 * r.clipped[1]).toFixed(1)}% of the as-ambient's, holding ${(100 * r.clippedLight[1]).toFixed(1)}%)${r.size === undefined ? '' : `, sprite size ratio (beta ${SPARSE_BETA}) ${r.size.toFixed(3)}`}, shipped − (text + ambient − sky) residual r/g/b ${rgb(r.identity.abs)} (signed ${rgb(r.identity.signed)}, ${(100 * r.identity.off).toFixed(3)}% of pixels off by more than 2 levels), scene light / far mean ${r.scene.toFixed(3)}`);
+  t.diagnostic(`each message's own particles at its eye, text/as-ambient light at beta ${OWN_BETA}: ${own.map((r) => `${r.name} ${r.light.toFixed(3)}`).join(', ')}`);
   // Every broken bound is named in one message, so a failure shows each way the particles differ.
   const broken = [];
+  for (const r of own) if (!(r.light >= OWN_LIGHT_BAND[0] && r.light <= OWN_LIGHT_BAND[1])) broken.push(`${r.name}: that message's own text particles carry ${r.light.toFixed(3)}× the light of the same particles drawn as ambient at beta ${OWN_BETA} (must be within ${OWN_LIGHT_BAND.join('–')})`);
   for (const r of rows) {
     if (!(r.light >= LIGHT_BAND[0] && r.light <= LIGHT_BAND[1])) broken.push(`${r.name}: the text particles carry ${r.light.toFixed(3)}× the light of the same particles drawn as ambient (must be within ${LIGHT_BAND.join('–')})`);
     if (!r.channels.every((x) => x >= CHANNEL_BAND[0] && x <= CHANNEL_BAND[1])) broken.push(`${r.name}: the text particles' colour balance is ${rgb(r.channels)}× that of the same particles drawn as ambient in red/green/blue, so their colour differs (each must be within ${CHANNEL_BAND.join('–')})`);
+    if (!r.clipped.every((x) => x <= MAX_CLIPPED)) broken.push(`${r.name}: the colour balance leaves out ${(100 * r.clipped[0]).toFixed(1)}% of the text layer's lit pixels and ${(100 * r.clipped[1]).toFixed(1)}% of the as-ambient's, because a channel is at 255 there; each may be at most ${100 * MAX_CLIPPED}%, so the colour check would not see the light those pixels hold`);
     if (r.size !== undefined && !(r.size >= SIZE_BAND[0] && r.size <= SIZE_BAND[1])) broken.push(`${r.name}: their sprites cover ${r.size.toFixed(3)}× the effective area of the same particles drawn as ambient at beta ${SPARSE_BETA} (must be within ${SIZE_BAND.join('–')})`);
     if (!r.identity.abs.every((x) => x <= MAX_RESIDUAL)) broken.push(`${r.name}: the shipped render differs from the text layer plus the ambient layer (over the sky, capped at 255) by ${rgb(r.identity.abs)} of their light in red/green/blue (signed ${rgb(r.identity.signed)}; ${(100 * r.identity.off).toFixed(3)}% of pixels off by more than 2 levels); each must be at most ${MAX_RESIDUAL}, so the shipped draw renders the particles differently from the draws compared here`);
     if (r.near && !(r.scene >= SCENE_BAND[0] && r.scene <= SCENE_BAND[1])) broken.push(`${r.name}: the scene's particle light is ${r.scene.toFixed(3)}× its mean at the far views (must be within ${SCENE_BAND.join('–')})`);
@@ -517,12 +556,13 @@ test('relocation leaves no streaks midway from hello world to its neighbours or 
   for (const p of per) t.diagnostic(`seed ${p.seed}: row/column residual over the cloud's own noise; floor ${p.floor.toFixed(3)} (controls ${show(p, V.controls)}); gated ${show(p, V.gated)}; el±25 ${show(p, V.cost)}`);
   const floor = mean(per.map((p) => p.floor));
   const gated = V.gated.flatMap(([n]) => ['row', 'col'].map((k) => [n, k, mean(per.map((p) => p.r[n][k] / p.floor))]));
-  const cost = V.cost.map(([n]) => [n, mean(per.map((p) => p.r[n].col / p.floor))]);
-  t.diagnostic(`mean over seeds ${SEEDS.join(', ')}: floor ${floor.toFixed(3)}; gated over the floor ${gated.map(([n, k, v]) => `${n} ${k} ${v.toFixed(3)}`).join(', ')}; el±25 column over the floor ${cost.map(([n, v]) => `${n} ${v.toFixed(3)}`).join(', ')}`);
+  const cost = V.cost.map(([n]) => [n, mean(per.map((p) => p.r[n].col / p.floor)), mean(per.map((p) => p.r[n].col))]);
+  t.diagnostic(`mean over seeds ${SEEDS.join(', ')}: floor ${floor.toFixed(3)}; gated over the floor ${gated.map(([n, k, v]) => `${n} ${k} ${v.toFixed(3)}`).join(', ')}; el±25 column over the floor ${cost.map(([n, v]) => `${n} ${v.toFixed(3)}`).join(', ')}, over the cloud's own noise ${cost.map(([n, , a]) => `${n} ${a.toFixed(3)}`).join(', ')}`);
   const broken = [];
   if (!(floor <= MAX_STREAK_FLOOR)) broken.push(`the floor ${floor.toFixed(3)} at the far control views is above ${MAX_STREAK_FLOOR}: relocation shows structure even there, so a comparison with it would mean nothing`);
   for (const [n, k, v] of gated) if (!(v <= STREAK_K)) broken.push(`${n}: the ${k} residual of the render minus its beta-0 twin is ${v.toFixed(3)}× the floor, above ${STREAK_K}×; relocation shows as ${k === 'row' ? 'horizontal' : 'vertical'} streaks there`);
   for (const [n, v] of cost) if (!(v <= MAX_EL_STREAK)) broken.push(`${n}: the column residual is ${v.toFixed(3)}× the floor, above ${MAX_EL_STREAK}×; the letter stems show as vertical streaks from ${n.startsWith('el+') ? 'above' : 'below'} E`);
+  for (const [n, , a] of cost) if (!(a <= MAX_EL_STREAK_ABS)) broken.push(`${n}: the column residual is ${a.toFixed(3)}× the cloud's own noise, above ${MAX_EL_STREAK_ABS}×; the letter stems show as vertical streaks from ${n.startsWith('el+') ? 'above' : 'below'} E, however much the floor rose`);
   assertNone(broken, `relocation must not show as streaks (means over seeds ${SEEDS.join(', ')}), but `);
 });
 

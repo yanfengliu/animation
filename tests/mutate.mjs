@@ -93,8 +93,10 @@ const PAGE_MUTANTS = [
     edits: [NEAR_UNIFORM, NEAR_SET, [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.4 * u_near));']] },
   { name: 'weak-relocation', defect: 'β falls back to 0.2, the rate the reveal used to make up for, so the words barely show at E',
     edits: [[BETA_LINE, 'const BETA_DEFAULT = 0.2;']] },
-  { name: 'no-density-compensation', defect: 'text particles come from anywhere in the cloud and land anywhere on the strokes, not from near their landing points, so nothing offsets the extra density along the stroke sight lines',
-    edits: [['acc += BETA * w[k] / scaleDown;', 'acc += 0.3 * BETA / 0.85 / n;'],
+  // The chances keep each message's text particles within 3% of the page's own count (30,582 in all
+  // against 30,254 for seed 1), so the mutant takes away density compensation, not particles (F64).
+  { name: 'no-density-compensation', defect: 'text particles come from anywhere in the cloud and land anywhere on the strokes, not from near their landing points, so nothing offsets the extra density along the stroke sight lines; each message keeps about its own number of particles',
+    edits: [['acc += BETA * w[k] / scaleDown;', 'acc += [0.211, 0.115, 0.110, 0.127, 0.098, 0.114][k] * BETA / 0.85;'],
       ['const vx = ux[k] + sigma * lands[k](), vy = uy[k] + sigma * lands[k]();', 'const vx = 1.6 * lands[k](), vy = (k ? 0 : -0.7) + 1.3 * lands[k]();']] },
   { name: 'text-drifts-sideways', defect: 'text particles get the ambient drift across their sight lines',
     edits: [['vec3 p = a_pos + a_dir * (u_swell * sin(swell(a_pos, t)));', 'vec3 p = a_pos + a_dir * (u_swell * sin(swell(a_pos, t))) + (code >= 8 ? drift(a_pos, t) : vec3(0.0));']] },
@@ -204,6 +206,21 @@ const PAGE_MUTANTS = [
     edits: [['loop, auto, cut: reduced, zoom', 'loop, auto, cut: reduced || (!auto && !loop), zoom']] },
   { name: 'reduced-play-glides', defect: 'with reduced motion Play still glides (F61)',
     edits: [['loop, auto, cut: reduced, zoom', 'loop, auto, cut: false, zoom']] },
+  // Repair round 1 (R1b): the illusion gates.
+  { name: 'reveal-only-a', defect: 'only the particles of "a" brighten near its eye, up to 1.25× there, so the whole text layer, which holds all six messages\' particles, dilutes the reveal (F51)',
+    edits: [['int code = int(a_seed.w + 0.5);', 'int code = int(a_seed.w + 0.5);\n  float mine = code >= 16 ? 1.0 : 0.0;'], NEAR_UNIFORM, nearSet(nearMessage(3)),
+      ['if (k >= 0) data[o + 9] += 8;', 'if (k >= 0) data[o + 9] += k === 3 ? 24 : 8;'],
+      [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.25 * mine * u_near));']] },
+  { name: 'reveal-blue-clipped', defect: 'text particles near E take a blue tint, blue × 1.5 with red and green × 0.96 at E, which saturates the blue of their densest strokes, so the colour check would leave out more of the text layer than its bound allows (F52)',
+    edits: [TEXT_DECL, NEAR_UNIFORM, NEAR_SET, [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * mix(vec3(1.0), vec3(0.96, 0.96, 1.5), text * u_near) * (level * tw * fade * energy);']] },
+  { name: 'depth-squeezed-messages', defect: 'the five messages after hello world keep only a third of their particles\' spread in depth about their text planes, so from far off they show as flatter, sharper copies, mirrored near their antipodes (F53)',
+    edits: [['P[i * 3 + a] = pos[a] + dirs[i * 3 + a] * dist;', 'P[i * 3 + a] = pos[a] + dirs[i * 3 + a] * (k ? tl + (dist - tl) / 3 : dist);']] },
+  { name: 'world-depth-halved', defect: '"world" keeps only half its particles\' spread in depth about its text plane, so from its antipode its mirrored copy is sharper than today\'s (F53)',
+    edits: [['P[i * 3 + a] = pos[a] + dirs[i * 3 + a] * dist;', 'P[i * 3 + a] = pos[a] + dirs[i * 3 + a] * (k === 5 ? tl + (dist - tl) / 2 : dist);']] },
+  { name: 'hello-world-weight-2', defect: 'hello world takes twice the relocation chance (about 13,900 text particles instead of 9,100), so midway to the face its letter rows show as horizontal streaks (F54)',
+    edits: [["{ name: 'hello-world', az: 38, el: 14, lines: ['hello', 'world'], slant: SLANT, scale: 2.65, baseline: 0.36 }", "{ name: 'hello-world', az: 38, el: 14, lines: ['hello', 'world'], slant: SLANT, scale: 2.65, baseline: 0.36, weight: 2 }"]] },
+  { name: 'upright-in-layers', defect: 'the letters stand upright and every message\'s particles sit in depth layers 2 units apart along their sight lines, so the streak floor rises with the columns above and below E and only the absolute bound holds them (F54)',
+    edits: [['const SLANT = 14;', 'const SLANT = 0;'], ['P[i * 3 + a] = pos[a] + dirs[i * 3 + a] * dist;', 'P[i * 3 + a] = pos[a] + dirs[i * 3 + a] * (tl + Math.round((dist - tl) / 2) * 2);']] },
 ];
 
 // The hygiene gate scans text, including this file, so the defects below are assembled from
