@@ -114,8 +114,36 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
     - Small eye loops read better on their own but cost "beautiful" 0.085, because they survive the radial smear seen from near the face's antipode.
     - The other five ratios moved by at most about 0.03 (three-seed means).
     - Coordinator looked at native resolution: the face reads as a face, with clear eyes.
-- [ ] M2 W17 started: gates for every message, the sequence and capture.
-- [ ] Review, repairs, visual acceptance, republish, devlog.
+- [x] M2 W17 and W18: gates for every message, the sequence and capture, committed as `8dc6893` on 2026-10-21 with the page and docs.
+  - W17 wrote the gates; W18 checked them against the brief, completed AGENTS.md and README.md, and changed no code.
+  - `npm test`: 42 of 42 in four runs on these bytes (210.4, 179.5, 165.8 and 162.0 s).
+  - Full mutation proof (2026-10-15): control green, 81 mutants (58 page, 23 tree), all killed.
+- [x] Review round 0 of the uncommitted page and gates, which `8dc6893` commits unchanged: Codex only, since the Claude lane's login had expired. It found 2 critical, 8 major and 2 minor issues. Dispositions F49–F61 are in [reviews/0_implementation.md](reviews/0_implementation.md): 12 accepted, F60 rejected.
+- [x] Coordinator's visual acceptance of `8dc6893`'s page, 2026-10-21.
+  - Method: each PNG was opened at native resolution. Shots came from `scripts/shoot.mjs` (t 0, seed 1) and, for capture mode, the headless probe `tmp/accept/capture.mjs` (live clock). Rendering is deterministic: W18's own shots of the same views have the same sha256.
+  - Criterion 1, met by looking: every message is clearly legible at its eye at 1280×800 and 390×844, and fits the frame at 390. sha256 prefixes:
+    - 1280×800: hello world `130b9096`, face `278a00ca`, "What" `8bc18bac`, "a" `6f6423db`, "beautiful" `cebfe767`, "world" `ce6bed66`;
+    - 390×844: `c7f400ef`, `18327fcb`, `5ded6d64`, `c8a271f2`, `6678b877`, `48bee552`, in the same order.
+  - Criterion 3, met by looking: no message is legible away from its eye.
+    - Midpoints, from hello world–face on: `4491bc3c`, `41974605`, `6c4cda99`, `7b49ac68`, `4b23be82`, `c81f67e4`.
+    - Back views (each eye's antipode), hello world first: `41c4ac24`, `35573cfa`, `898efc51`, `1ca572cc`, `9997b7be`, `06f61238`.
+    - Above `fb5a19fe`, below `c6bab818`, start `4e2c92df`.
+    - Seeded random views (`tmp/accept/random-views.txt`): `55e67112`, `afe479db`, `e67ef44c`, `ba41aa50`, `6b6950f0`, `c1610e24`. Top `edfbc922`, bottom `8fd07281`.
+  - Ghosts, not legible: near its antipode, each message's own particles form a bright mirrored, radially smeared shape.
+    - Strongest: "world", a bowtie at (158°, −18°), and hello world, a four-wing star at (218°, −14°).
+    - Single-message text layers confirm the source: `141071c8` and `dc5c8369`; the neighbours' column streaks are `ccb9658d` and `9f47f19e`.
+    - At their own eyes, "What" and "world" each show a faint smear of the other below the word.
+    - None of these is on the capture path, which stays at +14° to +20° elevation. F53 gates them.
+  - Criterion 5, by looking: in `#capture` the controls, readout, hint and cursor are hidden (computed styles).
+    - Every hold reads under the live clock: hello world `10acbdb6`, face `9ea94ab7`, "What" `5b59fb74`, "a" `103f1451`, "beautiful" `a6bb55ea`, "world" `fb1746d7`.
+    - The wrap glide shows a plain cloud (`7107e6a1`), and the loop is back at hello world after 44.2 s (`32857511`).
+- [ ] Repair round 1, one worker at a time:
+  - R1a, W19: F49, F50, F55–F59 and F61 (sequence, capture mode, page).
+  - R1b, W20: F51–F54 (illusion gates).
+  - Each milestone ends with three green runs, its new and touched mutants killed by name, and its own commit.
+- [ ] Review round 1 of the repairs; Claude lane only if the owner logs in again.
+- [ ] Full mutation proof on the final revision, the only browser workload while it runs.
+- [ ] Republish the artifact, then the devlog, Outcome and cleanup.
 
 ## Outcome
 
