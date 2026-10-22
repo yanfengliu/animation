@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Anamorphic Cloud</title>
-<meta name="description" content="A drifting cloud of glowing particles that spells hello world from one hidden point of view.">
+<meta name="description" content="A drifting cloud of glowing particles that hides six messages, each read from its own point of view: hello world, a smiling face, What, a, beautiful, world.">
 <style>
   :root {
     color-scheme: dark;
@@ -40,14 +40,15 @@
     right: max(var(--gutter), env(safe-area-inset-right));
   }
   #readout { font: 400 12px/1.2 var(--font-mono); letter-spacing: .08em; color: var(--ink-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-  #find {
+  .actions { display: flex; gap: 8px; }
+  .actions button {
     pointer-events: auto; cursor: pointer; white-space: nowrap; min-height: 40px; padding: 0 16px;
     font: 500 13px/1 var(--font-mono); letter-spacing: .03em; color: var(--ink);
     background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
     transition: background-color .2s ease, border-color .2s ease;
   }
-  #find:hover { background: var(--surface-hover); border-color: var(--line-strong); }
-  #find:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+  .actions button:hover { background: var(--surface-hover); border-color: var(--line-strong); }
+  .actions button:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
   #hint {
     position: fixed; margin: 0; text-align: center; pointer-events: none;
     left: max(var(--gutter), env(safe-area-inset-left));
@@ -58,15 +59,27 @@
   }
   #hint.gone { opacity: 0; }
   #nogl { position: fixed; inset: 0; margin: 0; display: grid; place-items: center; padding: 24px; text-align: center; font: 400 15px/1.6 var(--font-mono); color: var(--ink-soft); }
+  /* Capture mode (#capture): no chrome and no cursor, for recording the sequence. */
+  .capture .bar, .capture #hint { display: none; }
+  .capture #scene { cursor: none; }
   [hidden] { display: none !important; }
-  @media (prefers-reduced-motion: reduce) { #hint, #find { transition: none; } }
+  @media (max-width: 440px) {
+    .bar { gap: 8px; }
+    #readout { font-size: 11px; letter-spacing: .02em; }
+    .actions { gap: 6px; }
+    .actions button { padding: 0 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) { #hint, .actions button { transition: none; } }
 </style>
 </head>
 <body>
-<canvas id="scene" role="application" tabindex="0" aria-roledescription="3D particle scene" aria-label="A drifting cloud of glowing particles. From one hidden angle, some of the particles line up to spell hello world. Drag, or use the arrow keys, to change the point of view."></canvas>
+<canvas id="scene" role="application" tabindex="0" aria-roledescription="3D particle scene" aria-label="A drifting cloud of glowing particles. From six hidden angles, some of the particles line up to show hello world, a smiling face, and then What a beautiful world. Drag, or use the arrow keys, to change the point of view."></canvas>
 <div class="bar">
-  <div id="readout">AZ 336.0° · EL 6.0°</div>
-  <button id="find" type="button">Find the angle</button>
+  <div id="readout">AZ 8.0° · EL -16.0°</div>
+  <div class="actions">
+    <button id="find" type="button">Find the angle</button>
+    <button id="play" type="button">Play</button>
+  </div>
 </div>
 <p id="hint">Drag, or use the arrow keys, to change your point of view.</p>
 <p id="nogl" hidden>This animation needs WebGL 2, which this browser or device does not provide.</p>
@@ -85,22 +98,23 @@ document.head.append(fontCss);
 // eye = R·(cos el·sin az, sin el, cos el·cos az), looking at the origin with no roll.
 const DEG = Math.PI / 180;
 const R = 30;
-const MAGIC = Object.freeze({ az: 38, el: 14 });   // the secret eye E, degrees
-const START = { az: -24, el: 6 };                  // default first view, about 61° from E
+const START = { az: 8, el: -16 };                  // default first view, below the ring of eyes
 const EL_LIMIT = 70 * DEG;
 const BASE_FOV = 50;                               // vertical FOV on wide screens, degrees
 const ZOOM_MIN = 0.5, ZOOM_MAX = 4;                // zoom scales tan(fov/2); the eye never moves
-const N_TOTAL = 18000, OUTLIER_SHARE = 0.05;
-// Peak chance that a particle becomes text. Text and ambient particles look alike, so the words
-// show at E by density alone: about 3× the ambient density on the strokes at 0.85. The cost:
-// turning the camera keeps the text rows (azimuth) or columns (elevation) as faint streaks; the
-// letters lean (SLANT) so that the columns spread (measurements in docs/work/0_hello-world-cloud).
+const N_TOTAL = 48000, OUTLIER_SHARE = 0.05;
+// Peak chance that a particle becomes text. Text and ambient particles look alike, so each message
+// shows from its eye by density alone. The cost: turning the camera keeps the text rows (azimuth)
+// or columns (elevation) as faint streaks; the letters lean (SLANT) so that the columns spread
+// (measurements in docs/work/0_hello-world-cloud and docs/work/1_sentence-sequence).
 const BETA_DEFAULT = 0.85;
-const TEXT_SCALE = 2.65;                           // world units per x-height on the text plane
-const SWELL = 0.8;                                 // bob along sight lines from E, world units
+const SWELL = 0.8;                                 // bob along sight lines from an eye, world units
 const DRAG_RATE = 0.004;                           // radians per CSS pixel
 const TOUCH_SLOP = 10;                             // CSS px a finger may slip before a pinch without it counting as a drag
 const SNAP_DEG = 6, SNAP_MS = 900, GLIDE_MS = 2200;
+// The sequence: an eased glide to each message's eye in turn, then a hold exactly there.
+const HOLD_MS = 3000, LOAD_HOLD_MS = 1500, CAPTURE_HOLD_MS = 2000, CUT_HOLD_MS = 4000;
+const legMs = (deg) => 1500 + 50 * deg;            // glide time for an arc of `deg` degrees: 60° takes 4.5 s
 
 const params = new URLSearchParams(location.search);
 const numParam = (k) => {
@@ -126,6 +140,7 @@ const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const wrapPi = (a) => a - 2 * Math.PI * Math.floor((a + Math.PI) / (2 * Math.PI));
 const easeSine = (t) => 0.5 - 0.5 * Math.cos(Math.PI * t);
 const easeCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(2 - 2 * t, 3) / 2);
+const easeQuint = (t) => t * t * t * (t * (6 * t - 15) + 10);   // smootherstep: starts and stops without a jolt
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]); return [a[0] / l, a[1] / l, a[2] / l]; };
@@ -148,21 +163,15 @@ function makeRandom(str) {
   };
 }
 
-// The secret eye E and the text plane: through the origin, facing E, axes matching E's screen.
-const E_DIR = eyeDir(MAGIC.az * DEG, MAGIC.el * DEG);
-const E_POS = E_DIR.map((v) => v * R);
-const E_FWD = E_DIR.map((v) => -v);
-const E_RIGHT = norm(cross(E_FWD, [0, 1, 0]));
-const E_UP = cross(E_RIGHT, E_FWD);
-
 // ------------------------------------------------------------------ glyphs
-// Monoline geometric lowercase in x-height units: baseline y = 0, x-height 1, ascender 1.55,
-// bowls are circles of radius 0.5. 'L' is a polyline; 'A' is an arc (cx, cy, r, from°, to°),
-// running clockwise when to° < from°. Side types set the spacing between neighbours. The glyphs
-// are drawn upright here and lean right by SLANT when they are rasterised.
-const ASC = 1.55, STROKE = 0.16, LINE_GAP = 2.05, BASELINE = 0.36;
+// Monoline geometric glyphs in x-height units: baseline y = 0, x-height 1, ascender and capital
+// height 1.55, bowls are circles of radius 0.5. 'L' is a polyline (a single point is a dot); 'A' is
+// an arc (cx, cy, r, from°, to°), running clockwise when to° < from°. Side types set the spacing
+// between neighbours. The glyphs are drawn upright here; words lean right by SLANT when they are
+// rasterised. 'smile' is the face: a circle of radius 2 with two eyes and a smile.
+const ASC = 1.55, LINE_GAP = 2.05;
 // Italic lean, degrees. An elevation turn keeps every particle's screen column, so upright stems
-// would show above and below E as vertical streaks; a leaning stem spreads over many columns.
+// would show above and below an eye as vertical streaks; a leaning stem spreads over many columns.
 const SLANT = 14;
 const GLYPHS = {
   h: { w: 1, l: 's', r: 's', d: [['L', 0, 0, 0, ASC], ['A', 0.5, 0.5, 0.5, 180, 0], ['L', 1, 0.5, 1, 0]] },
@@ -172,41 +181,98 @@ const GLYPHS = {
   w: { w: 1.3, l: 'v', r: 'v', d: [['L', 0, 1, 0.325, 0, 0.65, 1, 0.975, 0, 1.3, 1]] },
   r: { w: 0.8, l: 's', r: 'n', d: [['L', 0, 0, 0, 1], ['A', 0.5, 0.5, 0.5, 180, 55]] },
   d: { w: 1, l: 'o', r: 's', d: [['A', 0.5, 0.5, 0.5, 0, 360], ['L', 1, 0, 1, ASC]] },
+  W: { w: 1.7, l: 'v', r: 'v', d: [['L', 0, ASC, 0.425, 0, 0.85, ASC, 1.275, 0, 1.7, ASC]] },
+  a: { w: 1, l: 'o', r: 's', d: [['A', 0.5, 0.5, 0.5, 0, 360], ['L', 1, 0, 1, 1]] },
+  t: { w: 0.7, l: 'n', r: 'n', d: [['L', 0.25, 1.35, 0.25, 0], ['L', 0, 1, 0.7, 1]] },
+  b: { w: 1, l: 's', r: 'o', d: [['L', 0, 0, 0, ASC], ['A', 0.5, 0.5, 0.5, 0, 360]] },
+  u: { w: 1, l: 's', r: 's', d: [['L', 0, 1, 0, 0.5], ['A', 0.5, 0.5, 0.5, 180, 360], ['L', 1, 1, 1, 0]] },
+  i: { w: 0, l: 's', r: 's', d: [['L', 0, 0, 0, 1], ['L', 0, 1.3, 0, 1.4]] },
+  f: { w: 0.8, l: 'n', r: 'n', d: [['L', 0.22, 0, 0.22, 1.2], ['A', 0.57, 1.2, 0.35, 180, 30], ['L', 0, 1, 0.62, 1]] },
+  smile: { w: 4, l: 'o', r: 'o', d: [['A', 2, 2, 2, 0, 360], ['L', 1.3, 2.25, 1.3, 3.15], ['L', 2.7, 2.25, 2.7, 3.15], ['A', 2, 2.15, 1.25, 205, 335]] },
 };
 const SIDE = { s: 0.22, o: 0.15, v: 0.09, n: 0.12 };
 
-// Rasterise "hello" over "world" into the stroke mask S, then blur it into B on a coarse grid.
-function buildMask() {
-  const PX = 64, CF = 4, BOX = 7;                  // mask px per x-height, coarse factor, box radius
-  const lines = ['hello', 'world'].map((word, li) => {
+// ------------------------------------------------------------------ messages
+// Six messages hidden in one cloud, in the order the sequence shows them. Each is read from its
+// own eye on the orbit sphere (az, el in degrees), through its own text plane: through the origin,
+// facing that eye, axes matching that eye's screen. `scale` is world units per glyph unit; a
+// message without one fills the width of "hello world" (so the narrow-screen field of view fits
+// every message), up to `cap`. A message with `baseline` keeps that layout; others are centred.
+// `weight` (1 unless set) scales a message's relocation chance: the face reads with margin at 0.6,
+// which leaves more of the shared particles to the words and keeps its cone of sight lines faint
+// from the other eyes.
+const MESSAGES = [
+  { name: 'hello-world', az: 38, el: 14, lines: ['hello', 'world'], slant: SLANT, scale: 2.65, baseline: 0.36 },
+  { name: 'face', az: 98, el: 18, lines: [['smile']], slant: 0, cap: 2.4, weight: 0.6 },
+  { name: 'what', az: 158, el: 16, lines: ['What'], slant: SLANT, cap: 3 },
+  { name: 'a', az: 218, el: 20, lines: ['a'], slant: SLANT, cap: 5 },
+  { name: 'beautiful', az: 278, el: 16, lines: ['beautiful'], slant: SLANT, cap: 3 },
+  { name: 'world', az: 338, el: 18, lines: ['world'], slant: SLANT, cap: 3 },
+];
+const MAGIC = Object.freeze({ az: MESSAGES[0].az, el: MESSAGES[0].el });   // hello world's eye E, degrees
+// Every message is drawn with the same particle ink in world units: strokes INK wide, and particles
+// gathered onto them from a Gaussian catchment of width sigma (BOX, below). The glyphs scale.
+const INK = 0.2;                                   // stroke width, world units
+const MASK_PX = 24;                                // stroke-mask pixels per world unit
+const BOX = 9;                                     // blur box radius in coarse mask pixels: sigma = √(BOX(BOX+1))/6 ≈ 1.58 world units
+
+// An eye on the orbit sphere and the frame of its text plane.
+function eyeFrame(az, el) {
+  const dir = eyeDir(az * DEG, el * DEG);
+  const fwd = dir.map((v) => -v);
+  const right = norm(cross(fwd, [0, 1, 0]));
+  return { dir, pos: dir.map((v) => v * R), fwd, right, up: cross(right, fwd) };
+}
+
+// A message's layout in glyph units: each line's glyphs along it, and the ink extents of the
+// leaning centre lines. Each line leans about its own baseline: a glyph point (x, y) moves to
+// (x + y·lean, y), so the stems lean and every stroke keeps its horizontal width, as in an oblique
+// type. The extents follow the leaning centre lines (polyline corners, arcs sampled every degree);
+// the block is later shifted so that its ink is centred on x = 0 (and on y = 0 unless the message
+// keeps its own baseline).
+function layout(msg) {
+  const lean = Math.tan(msg.slant * DEG);
+  const lines = msg.lines.map((line, li) => {
+    const keys = [...line];                        // a string's characters, or a list of glyph names
     let x = 0;
     const items = [];
-    for (let i = 0; i < word.length; i++) {
-      const g = GLYPHS[word[i]];
-      if (i) x += SIDE[GLYPHS[word[i - 1]].r] + SIDE[g.l];
+    for (let i = 0; i < keys.length; i++) {
+      const g = GLYPHS[keys[i]];
+      if (i) x += SIDE[GLYPHS[keys[i - 1]].r] + SIDE[g.l];
       items.push({ g, x });
       x += g.w;
     }
-    return { items, w: x, y: BASELINE - li * LINE_GAP };
+    return { items, w: x, y: msg.baseline === undefined ? 0 : msg.baseline - li * LINE_GAP };
   });
-  // Each line leans about its own baseline: a glyph point (x, y) moves to (x + y·lean, y), so the
-  // stems lean and every stroke keeps its horizontal width, as in an oblique type. The ink spans the
-  // leaning centre lines (polyline corners, arcs sampled every degree) plus a leaning round cap's
-  // half-width; the block then shifts so that its ink is centred on x = 0.
-  const lean = Math.tan(SLANT * DEG), half = STROKE / 2;
-  let inkL = Infinity, inkR = -Infinity;
+  let inkL = Infinity, inkR = -Infinity, inkB = Infinity, inkT = -Infinity;
   for (const line of lines) {
     let l = Infinity, r = -Infinity;
-    const reach = (x) => { l = Math.min(l, x); r = Math.max(r, x); };
+    const reach = (x, y) => { l = Math.min(l, x); r = Math.max(r, x); inkB = Math.min(inkB, line.y + y); inkT = Math.max(inkT, line.y + y); };
     for (const { g, x } of line.items) for (const s of g.d) {
-      if (s[0] === 'L') for (let k = 1; k + 1 < s.length; k += 2) reach(x + (s[k] + s[k + 1] * lean));
-      else for (let a = Math.min(s[4], s[5]); a <= Math.max(s[4], s[5]); a++) reach(x + (s[1] + s[3] * Math.cos(a * DEG) + (s[2] + s[3] * Math.sin(a * DEG)) * lean));
+      if (s[0] === 'L') for (let k = 1; k + 1 < s.length; k += 2) reach(x + (s[k] + s[k + 1] * lean), s[k + 1]);
+      else for (let a = Math.min(s[4], s[5]); a <= Math.max(s[4], s[5]); a++) reach(x + (s[1] + s[3] * Math.cos(a * DEG) + (s[2] + s[3] * Math.sin(a * DEG)) * lean), s[2] + s[3] * Math.sin(a * DEG));
     }
     inkL = Math.min(inkL, l - line.w / 2); inkR = Math.max(inkR, r - line.w / 2);
   }
+  if (msg.baseline === undefined) {
+    const dy = -(inkB + inkT) / 2;
+    for (const line of lines) line.y += dy;
+    inkB += dy; inkT += dy;
+  }
+  return { lines, lean, inkL, inkR, inkB, inkT };
+}
+// The half-width of a message's ink in world units at glyph scale s: the centre lines plus a
+// leaning round cap's half-width.
+const inkHalfWidth = (L, s) => (L.inkR - L.inkL) / 2 * s + INK / 2 * Math.hypot(1, L.lean);
+
+// Rasterise a message at glyph scale `scale` into its stroke mask S, then blur it into B on a
+// coarse grid.
+function buildMask(L, scale) {
+  const CF = 4, PX = Math.round(MASK_PX * scale / CF) * CF;   // mask px per glyph unit, coarse factor
+  const { lines, lean, inkL, inkR, inkB, inkT } = L, half = INK / scale / 2;
   const shift = -(inkL + inkR) / 2, halfW = (inkR - inkL) / 2 + half * Math.hypot(1, lean);
-  const top = BASELINE + ASC + STROKE / 2, bottom = BASELINE - LINE_GAP - STROKE / 2;
-  const pad = 1.6;                                 // more than the blur's reach
+  const top = inkT + half, bottom = inkB - half;
+  const pad = Math.max(1.6, 3.75 * BOX * CF / PX);   // more than the blur's reach (3 boxes)
   const x0 = -halfW - pad, y1 = top + pad;
   const W = Math.ceil((2 * halfW + 2 * pad) * PX / CF) * CF;
   const H = Math.ceil((top - bottom + 2 * pad) * PX / CF) * CF;
@@ -228,10 +294,10 @@ function buildMask() {
       const ox = x - line.w / 2 + shift, oy = line.y;
       for (const s of g.d) {
         if (s[0] === 'L') {
-          for (let k = 1; k + 3 < s.length; k += 2) {
-            const ax = ox + s[k], ay = oy + s[k + 1], dx = s[k + 2] - s[k], dy = s[k + 3] - s[k + 1];
+          for (let k = 1; k + 3 < s.length || (k === 1 && s.length === 3); k += 2) {
+            const ax = ox + s[k], ay = oy + s[k + 1], dx = (s[k + 2] ?? s[k]) - s[k], dy = (s[k + 3] ?? s[k + 1]) - s[k + 1], len2 = dx * dx + dy * dy;
             mark(oy, Math.min(ax, ax + dx), Math.max(ax, ax + dx), Math.min(ay, ay + dy), Math.max(ay, ay + dy), (px, py) => {
-              const t = clamp(((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy), 0, 1);
+              const t = len2 > 0 ? clamp(((px - ax) * dx + (py - ay) * dy) / len2, 0, 1) : 0;
               return Math.hypot(px - ax - t * dx, py - ay - t * dy);
             });
           }
@@ -275,7 +341,7 @@ function buildMask() {
   let inside = 0;
   for (let i = 0; i < S.length; i++) inside += S[i];
   return {
-    sigma, bmax, halfW, top, bottom, area: inside / (PX * PX),   // area: stroke area, x-height²
+    sigma, bmax, halfW, top, bottom, area: inside / (PX * PX),   // area: stroke area, glyph units²
     S: (ux, uy) => {
       const px = Math.floor((ux - x0) * PX), py = Math.floor((y1 - uy) * PX);
       return px >= 0 && py >= 0 && px < W && py < H && S[py * W + px] === 1;
@@ -288,10 +354,10 @@ function buildMask() {
 }
 
 // Even out the landing points (blue noise inside the strokes) with a few rounds of short-range
-// repulsion in plane units. The reach is 1.34 mean spacings of the landing points (0.085 x-height
-// at β 0.2, about 0.04 at the default), so dense strokes fill evenly instead of piling up at their
-// edges. Each move is a fraction of that reach, far below sigma, so the density that hides the
-// text elsewhere is unchanged; from E the strokes fill without clumps or holes.
+// repulsion in plane units. The reach is 1.34 mean spacings of the landing points, so dense strokes
+// fill evenly instead of piling up at their edges. Each move is a fraction of that reach, far below
+// sigma, so the density that hides the message elsewhere is unchanged; from its eye the strokes
+// fill without clumps or holes.
 function relax(land, mask) {
   const r = Math.max(0.02, 1.34 * Math.sqrt(mask.area / Math.max(1, land.length))), key = (x, y) => (Math.floor(x / r) + 512) * 1024 + Math.floor(y / r) + 512;
   for (let round = 0; round < 6; round++) {
@@ -328,9 +394,10 @@ function gaussian(rnd) {
   };
 }
 
-// Layout per particle (10 floats): position, sight-line direction (zero for ambient),
-// seeds (size, phase, rate, colour class + 4 for outliers). Text particles come first.
-function buildCloud(mask) {
+// Layout per particle (10 floats): position, swell direction, seeds (size, phase, rate, colour
+// class + 4 for outliers + 8 for text). Text particles come first, grouped by message in sequence
+// order, then the ambient ones.
+function buildCloud(M) {
   const rand = makeRandom('cloud:' + seed);
   const gauss = gaussian(rand);
   const randDir = () => {
@@ -365,100 +432,165 @@ function buildCloud(mask) {
     seeds[i * 4 + 3] = (c < 0.67 ? 0 : c < 0.86 ? 1 : c < 0.97 ? 2 : 3) + (i >= nCloud ? 4 : 0);
   }
 
-  // Relocation. u is where the sight line from E through P meets the text plane. With chance
-  // β·B(u)/Bmax, P moves sideways onto a stroke point u' drawn from the same Gaussian around u,
-  // keeping its distance from E. Density is unchanged at scales above sigma (hidden elsewhere);
-  // from E the stroke density is uniform because rate and landing kernel share B.
-  // Relocation has its own streams, so the cloud drawn above is the same for every β. Each
-  // particle takes one pick draw whatever β is, so a larger β only adds text particles.
-  const pick = makeRandom('relocate:' + seed), landGauss = gaussian(makeRandom('land:' + seed));
-  const isText = new Uint8Array(N_TOTAL);
-  const land = [];                                  // [particle, u'x, u'y] for each text particle
-  for (let i = 0; i < nCloud; i++) {
-    const chance = pick();
-    const dx = P[i * 3] - E_POS[0], dy = P[i * 3 + 1] - E_POS[1], dz = P[i * 3 + 2] - E_POS[2];
-    const along = dx * E_FWD[0] + dy * E_FWD[1] + dz * E_FWD[2];
-    if (along < 1) continue;
-    const k = R / along / TEXT_SCALE;
-    const ux = k * (dx * E_RIGHT[0] + dy * E_RIGHT[1] + dz * E_RIGHT[2]);
-    const uy = k * (dx * E_UP[0] + dy * E_UP[1] + dz * E_UP[2]);
-    const b = mask.B(ux, uy);
-    if (b <= 0 || chance >= BETA * b / mask.bmax) continue;
-    for (let tries = 0; tries < 64; tries++) {
-      const vx = ux + mask.sigma * landGauss(), vy = uy + mask.sigma * landGauss();
-      if (mask.S(vx, vy)) { land.push([i, vx, vy]); isText[i] = 1; break; }
-    }
-  }
-  relax(land, mask);
-  const dirs = new Float32Array(N_TOTAL * 3);
-  for (const [i, vx, vy] of land) {
-    // T − E for the landing point T on the plane (E = −R·fwd and the plane passes the origin).
-    const tx = R * E_FWD[0] + (E_RIGHT[0] * vx + E_UP[0] * vy) * TEXT_SCALE;
-    const ty = R * E_FWD[1] + (E_RIGHT[1] * vx + E_UP[1] * vy) * TEXT_SCALE;
-    const tz = R * E_FWD[2] + (E_RIGHT[2] * vx + E_UP[2] * vy) * TEXT_SCALE;
-    const tl = Math.hypot(tx, ty, tz);
-    const dist = Math.hypot(P[i * 3] - E_POS[0], P[i * 3 + 1] - E_POS[1], P[i * 3 + 2] - E_POS[2]);
-    for (let a = 0; a < 3; a++) {
-      dirs[i * 3 + a] = [tx, ty, tz][a] / tl;
-      P[i * 3 + a] = E_POS[a] + dirs[i * 3 + a] * dist;
-    }
-  }
-  const data = new Float32Array(N_TOTAL * 10);
-  let nText = 0;
-  for (let i = 0; i < N_TOTAL; i++) nText += isText[i];
-  let ti = 0, ai = nText;
+  // Relocation. For each message m, u_m is where the sight line from m's eye through P meets m's
+  // text plane, and w_m = weight_m·B_m(u_m)/max(B_m). The particle's chance of joining m is β·w_m, scaled
+  // down where the chances of all messages sum past 1, and one draw over the cumulative chances picks
+  // at most one message. It then moves sideways onto a stroke point u' drawn from the same Gaussian
+  // around u_m, keeping its distance from m's eye. Density is unchanged at scales above sigma
+  // (hidden elsewhere); from m's eye the stroke density is even because rate and landing kernel
+  // share B_m. Relocation has its own streams, so the cloud drawn above is the same for every β;
+  // each particle takes one pick draw whatever β is.
+  // Every particle bobs along a line from one eye (the swell, see the shader): a text particle along
+  // its own sight line, an ambient one along the line from a home eye drawn by the shares w_m/Σw
+  // (any eye when no message wants it), so off-angle each message's text particles move with the
+  // particles around them. The shares do not depend on β, so the homes are the same for every β.
+  const n = M.length;
+  const pick = makeRandom('relocate:' + seed), homes = makeRandom('home:' + seed);
+  const lands = M.map((m, k) => gaussian(makeRandom((k ? `land${k}:` : 'land:') + seed)));
+  const owner = new Int8Array(N_TOTAL).fill(-1);    // the message of each text particle
+  const home = new Uint8Array(N_TOTAL);
+  const land = M.map(() => []);                     // per message: [particle, u'x, u'y] for each text particle
+  const w = new Float64Array(n), ux = new Float64Array(n), uy = new Float64Array(n);
   for (let i = 0; i < N_TOTAL; i++) {
-    const o = (isText[i] ? ti++ : ai++) * 10;
+    const chance = i < nCloud ? pick() : 1;
+    let sum = 0;
+    for (let k = 0; k < n; k++) {
+      const { pos, fwd, right, up } = M[k].frame;
+      const dx = P[i * 3] - pos[0], dy = P[i * 3 + 1] - pos[1], dz = P[i * 3 + 2] - pos[2];
+      const along = dx * fwd[0] + dy * fwd[1] + dz * fwd[2];
+      w[k] = 0;
+      if (along < 1) continue;
+      const s = R / along / M[k].scale;
+      ux[k] = s * (dx * right[0] + dy * right[1] + dz * right[2]);
+      uy[k] = s * (dx * up[0] + dy * up[1] + dz * up[2]);
+      w[k] = (M[k].weight ?? 1) * M[k].mask.B(ux[k], uy[k]) / M[k].mask.bmax;
+      sum += w[k];
+    }
+    const h = homes();
+    let hk = Math.min(n - 1, Math.floor(h * n));
+    if (sum > 0) {
+      let acc = 0;
+      for (let k = 0; k < n; k++) if (w[k] > 0) { hk = k; acc += w[k] / sum; if (h < acc) break; }
+    }
+    home[i] = hk;
+    if (i >= nCloud || sum <= 0) continue;
+    const scaleDown = Math.max(1, BETA * sum);
+    let acc = 0;
+    for (let k = 0; k < n; k++) {
+      acc += BETA * w[k] / scaleDown;
+      if (chance >= acc) continue;
+      const { sigma, S } = M[k].mask;
+      for (let tries = 0; tries < 64; tries++) {
+        const vx = ux[k] + sigma * lands[k](), vy = uy[k] + sigma * lands[k]();
+        if (S(vx, vy)) { land[k].push([i, vx, vy]); owner[i] = k; break; }
+      }
+      break;
+    }
+  }
+  const dirs = new Float32Array(N_TOTAL * 3);
+  for (let k = 0; k < n; k++) {
+    relax(land[k], M[k].mask);
+    const { pos, fwd, right, up } = M[k].frame, s = M[k].scale;
+    for (const [i, vx, vy] of land[k]) {
+      // T − E for the landing point T on the plane (E = −R·fwd and the plane passes the origin).
+      const t = [0, 1, 2].map((a) => R * fwd[a] + (right[a] * vx + up[a] * vy) * s);
+      const tl = Math.hypot(t[0], t[1], t[2]);
+      const dist = Math.hypot(P[i * 3] - pos[0], P[i * 3 + 1] - pos[1], P[i * 3 + 2] - pos[2]);
+      for (let a = 0; a < 3; a++) {
+        dirs[i * 3 + a] = t[a] / tl;
+        P[i * 3 + a] = pos[a] + dirs[i * 3 + a] * dist;
+      }
+    }
+  }
+  for (let i = 0; i < N_TOTAL; i++) {
+    if (owner[i] >= 0) continue;
+    const e = M[home[i]].frame.pos, d = norm([P[i * 3] - e[0], P[i * 3 + 1] - e[1], P[i * 3 + 2] - e[2]]);
+    dirs.set(d, i * 3);
+  }
+  const counts = M.map(() => 0);
+  for (let i = 0; i < N_TOTAL; i++) if (owner[i] >= 0) counts[owner[i]]++;
+  const starts = [];
+  let nText = 0;
+  for (const c of counts) { starts.push(nText); nText += c; }
+  const data = new Float32Array(N_TOTAL * 10), next = starts.slice();
+  let ai = nText;
+  for (let i = 0; i < N_TOTAL; i++) {
+    const k = owner[i], o = (k >= 0 ? next[k]++ : ai++) * 10;
     data.set(P.subarray(i * 3, i * 3 + 3), o);
     data.set(dirs.subarray(i * 3, i * 3 + 3), o + 3);
     data.set(seeds.subarray(i * 4, i * 4 + 4), o + 6);
+    if (k >= 0) data[o + 9] += 8;
   }
-  return { data, nText, nAmbient: N_TOTAL - nText };
+  return { data, nText, nAmbient: N_TOTAL - nText, counts, starts };
 }
 
-const mask = buildMask();
-const cloud = buildCloud(mask);
-const FIT_HALF_WIDTH = mask.halfW * TEXT_SCALE * 1.22;   // world units the view must keep visible at E
+// The messages with their eyes, masks and scales. "hello world" sets the width every other
+// message may fill.
+const M = MESSAGES.map((msg) => ({ ...msg, frame: eyeFrame(msg.az, msg.el), layout: layout(msg) }));
+const FIT_INK = inkHalfWidth(M[0].layout, M[0].scale);
+for (const m of M) {
+  m.scale ??= Math.min(m.cap, (FIT_INK - INK / 2 * Math.hypot(1, m.layout.lean)) / ((m.layout.inkR - m.layout.inkL) / 2));
+  m.mask = buildMask(m.layout, m.scale);
+}
+const cloud = buildCloud(M);
+const FIT_HALF_WIDTH = Math.max(...M.map((m) => m.mask.halfW * m.scale)) * 1.22;   // world units the view must keep visible at an eye
 
 // ------------------------------------------------------------------ camera state
 const cam = { az: START.az * DEG, el: START.el * DEG, zoom: 1 };
 let mode = 'idle';
 let anim = null;            // eased camera move: from, deltas, start time, duration, easing
-let tour = null;            // { i } index into TOUR while touring
+let seq = null;             // the sequence while it plays: steps, position, loop, cut
+let heading = -1;           // the message a move is heading to or holding at
+let cursor = -1;            // the message last reached or picked; "Find the angle" goes to the next
+let capture = location.hash === '#capture';
+let autoplayed = false;     // the sequence at load (or capture) has started once
 let vel = { az: 0, el: 0 };
 let lastInput = -Infinity;
-let gestureFrom = 0;        // alignment when the current gesture began, degrees
+let gestureFrom = M.map(() => 0);   // alignment with each eye when the current gesture began, degrees
 let gestureDrag = { x: 0, y: 0 };   // net one-finger drag since the current gesture began, CSS px
 let ready = false, frames = 0;
 
+// Test hooks: msg=<name> puts the camera at that message's eye; az and el then override it.
+const msgParam = M.findIndex((m) => m.name === params.get('msg'));
+if (msgParam >= 0) { cam.az = wrapPi(M[msgParam].az * DEG); cam.el = M[msgParam].el * DEG; cursor = msgParam; }
 const azParam = numParam('az'), elParam = numParam('el'), fovParam = numParam('fov');
 if (azParam !== null) cam.az = wrapPi(azParam * DEG);
 if (elParam !== null) cam.el = clamp(elParam * DEG, -EL_LIMIT, EL_LIMIT);
+// textof=<name> with layer=text draws only that message's text particles.
+const textOf = layer === 'text' ? M.findIndex((m) => m.name === params.get('textof')) : -1;
 
 const canvas = document.getElementById('scene');
 const readout = document.getElementById('readout');
 const findBtn = document.getElementById('find');
+const playBtn = document.getElementById('play');
 const hintEl = document.getElementById('hint');
+document.documentElement.classList.toggle('capture', capture);
 const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
 const viewAspect = () => (canvas.clientWidth || innerWidth) / Math.max(1, canvas.clientHeight || innerHeight);
-// Vertical tan(fov/2) before zoom: widened on narrow screens so the text block fits with margin.
+// Vertical tan(fov/2) before zoom: widened on narrow screens so every message fits with margin.
 const baseTan = (aspect) => Math.max(Math.tan(BASE_FOV * DEG / 2), FIT_HALF_WIDTH / R / aspect);
 const tanHalf = () => baseTan(viewAspect()) / cam.zoom;
 const clampZoom = (z) => clamp(z, ZOOM_MIN, ZOOM_MAX);
 if (fovParam !== null) cam.zoom = clampZoom(baseTan(viewAspect()) / Math.tan(clamp(fovParam, 1, 170) * DEG / 2));
-const alignDeg = () => angleBetween(eyeDir(cam.az, cam.el), E_DIR) / DEG;
+const alignTo = (k) => angleBetween(eyeDir(cam.az, cam.el), M[k].frame.dir) / DEG;
+const alignDeg = () => alignTo(0);                // degrees from hello world's eye E
+const atMessage = () => M.findIndex((m, k) => alignTo(k) < 1e-3);
 const wrapDeg = (d) => { const w = ((d % 360) + 540) % 360 - 180; return w === -180 ? 180 : w; };
+const freeze = (o) => Object.freeze(o);
 
 Object.defineProperty(window, '__cloud', {
   enumerable: true,
-  value: Object.freeze(Object.create(null, {
+  value: freeze(Object.create(null, {
     ready: { enumerable: true, get: () => ready },
     frame: { enumerable: true, get: () => frames },
     magic: { enumerable: true, value: MAGIC },
-    counts: { enumerable: true, value: Object.freeze({ text: cloud.nText, ambient: cloud.nAmbient }) },
+    messages: { enumerable: true, value: freeze(M.map((m) => freeze({ name: m.name, az: m.az, el: m.el }))) },
+    counts: { enumerable: true, value: freeze({ text: cloud.nText, ambient: cloud.nAmbient, byMessage: freeze(Object.fromEntries(M.map((m, k) => [m.name, cloud.counts[k]]))) }) },
     view: { enumerable: true, value: () => ({ az: wrapDeg(cam.az / DEG), el: cam.el / DEG, fov: 2 * Math.atan(tanHalf()) / DEG }) },
     alignment: { enumerable: true, value: () => alignDeg() },
     mode: { enumerable: true, value: () => mode },
+    target: { enumerable: true, value: () => { const k = heading >= 0 && (mode === 'tour' || mode === 'glide' || mode === 'snap') ? heading : atMessage(); return k >= 0 ? M[k].name : null; } },
+    capture: { enumerable: true, get: () => capture },
   })),
 });
 
@@ -474,10 +606,9 @@ if (!gl) { fail(); return; }
 const PARTICLE_VS = `#version 300 es
 precision highp float;
 layout(location = 0) in vec3 a_pos;
-layout(location = 1) in vec3 a_dir;    // unit sight line from E for text particles, zero for ambient
-layout(location = 2) in vec4 a_seed;   // size, phase, rate, colour class (+4 for outliers)
+layout(location = 1) in vec3 a_dir;    // unit swell direction: along the line from an eye
+layout(location = 2) in vec4 a_seed;   // size, phase, rate, colour class (+4 outlier, +8 text)
 uniform mat4 u_view, u_proj;
-uniform vec3 u_eyeE;
 uniform float u_time, u_ppu, u_aperture, u_focus, u_minPx, u_maxPx, u_swell;
 uniform vec3 u_pal[4];                 // moon, cyan, lavender, amber
 out vec3 v_col;
@@ -496,18 +627,15 @@ vec3 drift(vec3 p, float t) {
 
 void main() {
   int code = int(a_seed.w + 0.5);
-  bool outlier = code >= 4;
-  float text = step(0.5, dot(a_dir, a_dir));
+  bool outlier = (code & 4) != 0;
   float t = u_time;
-  float s = u_swell * sin(swell(a_pos, t));
-  vec3 p = a_pos;
-  if (text > 0.5) {
-    p += a_dir * s;                    // along its own sight line from E: invisible from E
-  } else {
-    // Ambient particles share the swell along their own line from E, so off-angle the text
-    // particles move with their neighbours; the drift and wobble are what E sees move.
+  // Every particle bobs along its line from an eye: a text particle along its own sight line, so
+  // its message never moves as seen from its eye; an ambient one along the line from its home eye.
+  vec3 p = a_pos + a_dir * (u_swell * sin(swell(a_pos, t)));
+  if (code < 8) {
+    // Ambient particles also drift and wobble a little; that is what an eye sees move.
     vec3 wob = 0.06 * sin(vec3(0.71, 0.93, 0.82) * t * (0.6 + a_seed.z) + a_seed.y * vec3(6.283, 12.1, 3.7));
-    p += normalize(a_pos - u_eyeE) * s + drift(a_pos, t) + wob;
+    p += drift(a_pos, t) + wob;
   }
   vec4 vp = u_view * vec4(p, 1.0);
   float depth = max(-vp.z, 0.05);
@@ -528,8 +656,8 @@ void main() {
   tw += 0.6 * pow(max(0.0, sin(t * 0.37 * rate + a_seed.y * 40.0)), 30.0);
   float fade = mix(1.0, 0.55, smoothstep(u_focus - 8.0, u_focus + 14.0, depth));
   float level = 0.46 * (0.5 + fract(a_seed.y * 13.37));
-  // Text and ambient particles follow the same rules at every angle, E included: the words
-  // show at E only because the text particles line up there.
+  // Text and ambient particles follow the same rules at every angle, every eye included: each
+  // message shows from its eye only because its particles line up there.
   v_col = u_pal[code & 3] * (level * tw * fade * energy);
   v_quad = quad; v_core = core; v_disc = disc; v_blur = coc / disc;
 }`;
@@ -664,7 +792,6 @@ function draw() {
   gl.useProgram(pr.p);
   gl.uniformMatrix4fv(u.u_view, false, viewMatrix(eye));
   gl.uniformMatrix4fv(u.u_proj, false, projMatrix(th, aspect, 0.5, 120));
-  gl.uniform3fv(u.u_eyeE, E_POS);
   gl.uniform1f(u.u_time, clock);
   gl.uniform1f(u.u_ppu, h / 2 / th);
   gl.uniform1f(u.u_aperture, 0.14);
@@ -676,15 +803,18 @@ function draw() {
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE);                 // additive, premultiplied colour
   gl.bindVertexArray(glr.vao);
-  if (layer === 'text') gl.drawArrays(gl.POINTS, 0, cloud.nText);
-  else if (layer === 'ambient') gl.drawArrays(gl.POINTS, cloud.nText, cloud.nAmbient);
+  if (layer === 'text') {
+    if (textOf >= 0) gl.drawArrays(gl.POINTS, cloud.starts[textOf], cloud.counts[textOf]);
+    else gl.drawArrays(gl.POINTS, 0, cloud.nText);
+  } else if (layer === 'ambient') gl.drawArrays(gl.POINTS, cloud.nText, cloud.nAmbient);
   else gl.drawArrays(gl.POINTS, 0, N_TOTAL);
   gl.bindVertexArray(null);
 }
 
 // ------------------------------------------------------------------ camera motion
 const tourAllowed = () => tourParam && !reduced;
-const magicTarget = (zoom) => ({ az: MAGIC.az * DEG, el: MAGIC.el * DEG, zoom });
+const msgTarget = (k, zoom) => ({ az: M[k].az * DEG, el: M[k].el * DEG, zoom });
+const alignments = () => M.map((m, k) => alignTo(k));
 
 function beginAnim(target, ms, ease) {
   const now = performance.now();
@@ -706,33 +836,66 @@ function stepAnim(now) {
   return true;
 }
 
-// Tour from load until the first input: start → E, hold, wander well away, back to E from
-// another side, repeat. Any input stops it for good; reduced motion never starts it.
-const TOUR = ['E', 'hold', [140, 28], [250, -8], [330, 48], 'E', 'hold', [-60, -16], [-150, 22], [110, 42]];
-function startTour() {
+// The sequence: from wherever the camera is, an eased glide to each message's eye in sequence
+// order, then a hold exactly there. At load it plays once after a short hold on the start view and
+// ends holding at the last message; Play plays it again; capture mode loops it, gliding from the
+// last message back to the first. Under reduced motion it cuts from hold to hold instead, and it
+// never plays at load. Any input stops it.
+function playSequence({ hold = 0, loop = false, auto = false } = {}) {
   mode = 'tour';
-  tour = { i: 0 };
-  beginAnim(null, 1000);
+  anim = null; heading = -1; vel = { az: 0, el: 0 };
+  seq = { steps: hold ? [{ hold, at: -1 }] : [], i: 0, first: hold ? 1 : 0, loop, auto, cut: reduced, zoom: Math.min(cam.zoom, 1) };
+  for (let k = 0; k < M.length; k++) seq.steps.push({ go: k }, { hold: HOLD_MS, at: k });
+  nextStep();
 }
-function tourStep() {
-  const s = TOUR[tour.i++ % TOUR.length];
-  if (s === 'hold') { beginAnim(null, 5000); return; }
-  const target = s === 'E' ? magicTarget(1) : { az: s[0] * DEG, el: s[1] * DEG, zoom: 1 };
-  const ang = angleBetween(eyeDir(cam.az, cam.el), eyeDir(target.az, target.el)) / DEG;
-  beginAnim(target, (2.2 + ang / 10) * 1000, easeSine);
+function nextStep() {
+  if (seq.i >= seq.steps.length) {
+    if (!seq.loop) { seq = null; mode = 'idle'; heading = -1; return; }
+    seq.i = seq.first;
+  }
+  const s = seq.steps[seq.i++];
+  if (s.go === undefined) {
+    if (s.at >= 0) cursor = s.at;
+    heading = s.at;
+    beginAnim(null, s.at >= 0 && seq.cut ? CUT_HOLD_MS : s.hold);
+    return;
+  }
+  heading = s.go;
+  const target = msgTarget(s.go, seq.zoom);
+  if (seq.cut) {
+    cam.az = wrapPi(target.az); cam.el = target.el; cam.zoom = target.zoom;
+    nextStep();
+    return;
+  }
+  beginAnim(target, legMs(alignTo(s.go)), easeQuint);
 }
 function stopAuto() {
   if (mode === 'tour' || mode === 'glide' || mode === 'snap' || mode === 'inertia') mode = 'idle';
-  anim = null; tour = null; vel = { az: 0, el: 0 };
+  anim = null; seq = null; heading = -1; vel = { az: 0, el: 0 };
 }
-// The camera came to rest: ease into exact alignment when close, unless this gesture moved away from E.
+// The camera came to rest: ease into exact alignment with an eye when close, unless this gesture
+// moved away from it.
 function settle() {
   vel = { az: 0, el: 0 };
-  const d = alignDeg();
-  if (d < SNAP_DEG && d > 1e-4 && d <= gestureFrom + 0.1) {
-    if (reduced) { Object.assign(cam, magicTarget(cam.zoom)); mode = 'idle'; }
-    else { mode = 'snap'; beginAnim(magicTarget(cam.zoom), SNAP_MS, easeSine); }
-  } else mode = 'idle';
+  mode = 'idle';
+  for (let k = 0; k < M.length; k++) {
+    const d = alignTo(k);
+    if (!(d < SNAP_DEG && d > 1e-4 && d <= gestureFrom[k] + 0.1)) continue;
+    cursor = k;
+    if (reduced) Object.assign(cam, { az: wrapPi(M[k].az * DEG), el: M[k].el * DEG });
+    else { mode = 'snap'; heading = k; beginAnim(msgTarget(k, cam.zoom), SNAP_MS, easeSine); }
+    return;
+  }
+}
+// Capture mode (#capture): no chrome, no cursor, and the sequence loops; only Escape ends it.
+function setCapture(on) {
+  if (on === capture) return;
+  capture = on;
+  document.documentElement.classList.toggle('capture', on);
+  stopAuto();
+  pointers.clear(); pinch = null;
+  canvas.classList.remove('grabbing');
+  if (on) { autoplayed = true; playSequence({ hold: CAPTURE_HOLD_MS, loop: true }); }
 }
 
 function stepCamera(now, dt) {
@@ -745,9 +908,11 @@ function stepCamera(now, dt) {
     vel.az *= decay; vel.el *= decay;
     if (Math.hypot(vel.az, vel.el) < 0.02) settle();
   } else if (anim && (mode === 'tour' || mode === 'glide' || mode === 'snap')) {
-    if (stepAnim(now)) { if (mode === 'tour') tourStep(); else mode = 'idle'; }
-  } else if (mode === 'idle' && tourAllowed() && lastInput === -Infinity) {
-    startTour();
+    if (stepAnim(now)) { if (mode === 'tour') nextStep(); else { mode = 'idle'; heading = -1; } }
+  } else if (mode === 'idle' && !autoplayed && lastInput === -Infinity && (capture || tourAllowed())) {
+    autoplayed = true;
+    if (capture) playSequence({ hold: CAPTURE_HOLD_MS, loop: true });
+    else playSequence({ hold: LOAD_HOLD_MS, auto: true });
   }
 }
 
@@ -760,14 +925,14 @@ const sample = () => { const t = performance.now(); samples.push({ t, az: cam.az
 const spread = () => { const [a, b] = [...pointers.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
 
 canvas.addEventListener('pointerdown', (e) => {
-  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  if (capture || (e.pointerType === 'mouse' && e.button !== 0)) return;
   try { canvas.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   noteInput();
   // A finger added mid-gesture forgives the drag so far only while it is within the touch slop:
-  // a pinch that starts at E still ends at E, but a deliberate drag away from E still counts.
-  if (mode !== 'drag') { gestureFrom = alignDeg(); gestureDrag = { x: 0, y: 0 }; }
-  else if (Math.hypot(gestureDrag.x, gestureDrag.y) < TOUCH_SLOP) gestureFrom = Math.max(gestureFrom, alignDeg());
+  // a pinch that starts at an eye still ends there, but a deliberate drag away still counts.
+  if (mode !== 'drag') { gestureFrom = alignments(); gestureDrag = { x: 0, y: 0 }; }
+  else if (Math.hypot(gestureDrag.x, gestureDrag.y) < TOUCH_SLOP) gestureFrom = gestureFrom.map((g, k) => Math.max(g, alignTo(k)));
   stopAuto();
   mode = 'drag';
   samples = [];
@@ -777,7 +942,7 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 canvas.addEventListener('pointermove', (e) => {
   const p = pointers.get(e.pointerId);
-  if (!p) return;
+  if (!p || capture) return;
   const dx = e.clientX - p.x, dy = e.clientY - p.y;
   p.x = e.clientX; p.y = e.clientY;
   noteInput();
@@ -821,7 +986,7 @@ canvas.addEventListener('pointercancel', (e) => { release(e); if (!pointers.size
 canvas.addEventListener('lostpointercapture', (e) => { if (pointers.has(e.pointerId)) { release(e); if (!pointers.size && mode === 'drag') settle(); } });
 
 // Zoom changes only the field of view. A running snap or glide keeps going and carries the new
-// zoom to its end; a tour or a coast stops, as with any other input.
+// zoom to its end; the sequence or a coast stops, as with any other input.
 function zoomBy(f) {
   cam.zoom = clampZoom(cam.zoom * f);
   if (anim && anim.target && (mode === 'snap' || mode === 'glide')) { anim.z0 = cam.zoom; anim.dz = 0; anim.target.zoom = cam.zoom; }
@@ -829,12 +994,17 @@ function zoomBy(f) {
 }
 window.addEventListener('wheel', (e) => {
   e.preventDefault();
+  if (capture) return;
   const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
   noteInput();
   zoomBy(Math.exp(-e.deltaY * unit * 0.0015));
 }, { passive: false });
 
 window.addEventListener('keydown', (e) => {
+  if (capture) {
+    if (e.key === 'Escape') { e.preventDefault(); noteInput(); setCapture(false); }
+    return;
+  }
   if (e.altKey || e.ctrlKey || e.metaKey) return;
   // Keys steer unless a text field has focus; Tab is never handled, so focus order is untouched.
   const focus = document.activeElement;
@@ -849,25 +1019,37 @@ window.addEventListener('keydown', (e) => {
   if (e.key in zoomKeys) { zoomBy(zoomKeys[e.key]); return; }
   stopAuto();
   hintEl.classList.add('gone');
-  gestureFrom = alignDeg();
+  gestureFrom = alignments();
   // Arrow keys move the viewpoint: right orbits the eye to its right, up raises it.
   cam.az = wrapPi(cam.az + keys[e.key][0]);
   cam.el = clamp(cam.el + keys[e.key][1], -EL_LIMIT, EL_LIMIT);
   settle();
 });
 
+// "Find the angle" glides to the next message's eye in sequence order (the first from the start).
 findBtn.addEventListener('click', () => {
+  if (capture) return;
   noteInput();
   stopAuto();
-  const target = magicTarget(Math.min(cam.zoom, 1));
-  if (reduced) { Object.assign(cam, target); mode = 'idle'; return; }
+  const k = (cursor + 1) % M.length, target = msgTarget(k, Math.min(cam.zoom, 1));
+  cursor = k;
+  if (reduced) { Object.assign(cam, { az: wrapPi(target.az), el: target.el, zoom: target.zoom }); mode = 'idle'; return; }
   mode = 'glide';
+  heading = k;
   beginAnim(target, GLIDE_MS, easeCubic);
 });
+playBtn.addEventListener('click', () => {
+  if (capture) return;
+  noteInput();
+  stopAuto();
+  playSequence();
+});
+window.addEventListener('hashchange', () => setCapture(location.hash === '#capture'));
 
 motionQuery.addEventListener('change', (e) => {
   reduced = e.matches;
-  if (reduced && mode === 'tour') stopAuto();
+  // The sequence at load stops; one the viewer asked for (Play, capture) cuts from here on.
+  if (reduced && seq) { if (seq.auto) stopAuto(); else seq.cut = true; }
 });
 
 // ------------------------------------------------------------------ main loop

@@ -1,8 +1,8 @@
 // Gate: the page as a page.
 // Bound: headless Chromium with SwiftShader WebGL2; the page opened from disk with the listed
 // query strings and viewports; the Google Fonts stylesheet answered with empty CSS. Proves: those
-// loads (including the default tour, a "Find the angle" glide and both layers) log no console
-// errors and no page errors; the only request leaving the page is the Google Fonts stylesheet,
+// loads (including the default tour, a "Find the angle" glide, both layers and one message's text
+// layer at its eye) log no console errors and no page errors; the only request leaving the page is the Google Fonts stylesheet,
 // and if that stylesheet never answers the page still draws, within 2 s of the time the same load
 // takes with it answered (the two loads started together in one browser, each timed to its first
 // frame); nothing overflows horizontally at 390 px; Tab reaches the canvas and then "Find the
@@ -33,7 +33,7 @@ async function withPage(query, opts, fn) {
 }
 
 test('loads log no console errors and no page errors', async (t) => {
-  const loads = [['', {}], ['az=38&el=14&t=0&tour=0', {}], ['layer=text&tour=0', {}], ['layer=ambient&tour=0', {}], ['', PHONE]];
+  const loads = [['', {}], ['az=38&el=14&t=0&tour=0', {}], ['layer=text&tour=0', {}], ['layer=ambient&tour=0', {}], ['msg=face&layer=text&textof=face&tour=0', {}], ['', PHONE]];
   const errors = [], warnings = [];
   for (const [query, opts] of loads) {
     await withPage(query, opts, async ({ page, log }) => {

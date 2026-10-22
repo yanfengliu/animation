@@ -82,18 +82,6 @@ export async function waitFrames(page, frames = 3) {
   await page.waitForFunction((n) => window.__cloud.frame >= n, f0 + frames, { timeout: 15000 });
 }
 
-// The secret viewpoint E as the page reports it (window.__cloud.magic).
-export async function magic(context) {
-  const page = await context.newPage();
-  try {
-    await page.goto(PAGE_URL + '?tour=0');
-    await waitFrames(page, 1);
-    return await page.evaluate(() => ({ az: window.__cloud.magic.az, el: window.__cloud.magic.el }));
-  } finally {
-    await page.close();
-  }
-}
-
 // What the page reports: view (az, el, fov in degrees), alignment from E, mode, frame.
 export function state(page) {
   return page.evaluate(() => {
@@ -103,7 +91,8 @@ export function state(page) {
 }
 
 // Loads a view in `context` and returns its screenshot decoded to RGB, what the page reported
-// and the particle counts. Fails when a requested az, el or fov did not take, so a view that
+// and the particle counts (text, ambient, and text per message). Fails when a requested az, el or
+// fov did not take, so a view that
 // silently fell back to the default is never measured as if it were the one asked for.
 export async function render(context, query) {
   const page = await context.newPage();
@@ -117,7 +106,7 @@ export async function render(context, query) {
     if (want.el !== undefined && Math.abs(s.el - Number(want.el)) > 0.01) throw new Error(`el did not take for "${query}": the page reports ${s.el}`);
     if (want.fov !== undefined && Math.abs(s.fov - Number(want.fov)) > 0.05) throw new Error(`fov did not take for "${query}": the page reports ${s.fov}`);
     const png = await page.screenshot({ animations: 'disabled' });
-    const counts = await page.evaluate(() => ({ text: window.__cloud.counts.text, ambient: window.__cloud.counts.ambient }));
+    const counts = await page.evaluate(() => ({ text: window.__cloud.counts.text, ambient: window.__cloud.counts.ambient, byMessage: { ...window.__cloud.counts.byMessage } }));
     return { img: decodePng(png), state: s, counts };
   } finally {
     await page.close();

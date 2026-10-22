@@ -32,7 +32,7 @@ import { phases } from './lib/phases.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'tmp', 'mutants');
-const PAGE_GATES = ['tests/illusion.test.mjs', 'tests/controls.test.mjs', 'tests/motion.test.mjs', 'tests/page.test.mjs'];
+const PAGE_GATES = ['tests/illusion.test.mjs', 'tests/controls.test.mjs', 'tests/motion.test.mjs', 'tests/page.test.mjs', 'tests/sequence.test.mjs'];
 const HYGIENE_GATE = ['tests/hygiene.test.mjs'];
 
 // The reveal the owner rejected (2026-10-11: "Some of the dots are lighting up more as I approach
@@ -42,7 +42,12 @@ const nearSet = (expr) => ['gl.uniform1f(u.u_swell, SWELL);', `gl.uniform1f(u.u_
 const NEAR = 'Math.max(0, 1 - alignDeg() / 12)';
 const NEAR_SET = nearSet(NEAR);
 const PARTICLE_COLOUR = 'v_col = u_pal[code & 3] * (level * tw * fade * energy);';
+// The shader tells text particles from ambient ones only by their code (+8 for text); the mutants
+// that act on text particles name them with this declaration.
+const TEXT_DECL = ['int code = int(a_seed.w + 0.5);', 'int code = int(a_seed.w + 0.5);\n  float text = code >= 8 ? 1.0 : 0.0;'];
 const TEXT_BRIGHTER = [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.25 * text * u_near));'];
+// u_near for another message: 1 at the eye of message k (0-based, in sequence order), 0 from 12° out.
+const nearMessage = (k) => `Math.max(0, 1 - alignTo(${k}) / 12)`;
 const GOLD_TINT = [PARTICLE_COLOUR, 'v_col = mix(u_pal[code & 3], vec3(1.0, 0.78, 0.46), 0.3 * text * u_near) * (level * tw * fade * energy);'];
 // Review round 5 (R5-1): red and blue down, green up, so luminance and warmth stay where they were.
 const GREEN_TINT = [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * mix(vec3(1.0), vec3(0.739, 1.10, 0.739), text * u_near) * (level * tw * fade * energy);'];
@@ -50,7 +55,7 @@ const BETA_LINE = 'const BETA_DEFAULT = 0.85;';
 const DEFAULT_DRAW = 'else gl.drawArrays(gl.POINTS, 0, N_TOTAL);';
 // `found` turns true when a glide lands, so the reveal shows only after "Find the angle".
 const FOUND = [['let ready = false, frames = 0;', 'let ready = false, frames = 0, found = false;'],
-  ["if (stepAnim(now)) { if (mode === 'tour') tourStep(); else mode = 'idle'; }", "if (stepAnim(now)) { if (mode === 'tour') tourStep(); else { if (mode === 'glide') found = true; mode = 'idle'; } }"]];
+  ["if (stepAnim(now)) { if (mode === 'tour') nextStep(); else { mode = 'idle'; heading = -1; } }", "if (stepAnim(now)) { if (mode === 'tour') nextStep(); else { if (mode === 'glide') found = true; mode = 'idle'; heading = -1; } }"]];
 // 1 once the camera has stayed within 1° of E in `mode` for 5 s; the timer restarts on leaving.
 const DWELL_DECL = ['let ready = false, frames = 0;', 'let ready = false, frames = 0, dwellFrom = null;'];
 const dwell = (m) => `(mode === '${m}' && alignDeg() < 1 ? (performance.now() - (dwellFrom ??= performance.now()) > 5000 ? 1 : 0) : (dwellFrom = null, 0))`;
@@ -59,47 +64,47 @@ const tourHold = (ms) => `(mode === 'tour' && anim && !anim.target && alignDeg()
 
 const PAGE_MUTANTS = [
   { name: 'reveal-brighter', defect: 'text particles brighten near E, up to 1.25× at E (a reveal)',
-    edits: [NEAR_UNIFORM, NEAR_SET, TEXT_BRIGHTER] },
+    edits: [TEXT_DECL, NEAR_UNIFORM, NEAR_SET, TEXT_BRIGHTER] },
   { name: 'reveal-extra-text-pass', defect: 'the shipped draw alone adds a second pass of the text particles near E, at 25% of their light at E (a reveal that the layer=text and layer=ambient draws do not show)',
     edits: [[DEFAULT_DRAW, `else {\n    gl.drawArrays(gl.POINTS, 0, N_TOTAL);\n    const k = 0.25 * ${NEAR};\n    if (k > 0) { gl.blendColor(k, k, k, 1); gl.blendFunc(gl.CONSTANT_COLOR, gl.ONE); gl.drawArrays(gl.POINTS, 0, cloud.nText); }\n  }`]] },
   { name: 'reveal-on-tour', defect: 'text particles brighten near E only while the tour runs, up to 1.25× during its hold at E (a reveal that views with tour=0 do not show)',
-    edits: [NEAR_UNIFORM, nearSet(`mode === 'tour' ? ${NEAR} : 0`), TEXT_BRIGHTER] },
+    edits: [TEXT_DECL, NEAR_UNIFORM, nearSet(`mode === 'tour' ? ${NEAR} : 0`), TEXT_BRIGHTER] },
   { name: 'reveal-after-glide', defect: 'once "Find the angle" has glided to E, text particles brighten near E, up to 1.25× at E (a reveal that views set by URL do not show)',
-    edits: [NEAR_UNIFORM, nearSet(`found ? ${NEAR} : 0`), TEXT_BRIGHTER, ...FOUND] },
+    edits: [TEXT_DECL, NEAR_UNIFORM, nearSet(`found ? ${NEAR} : 0`), TEXT_BRIGHTER, ...FOUND] },
   { name: 'reveal-after-dwell', defect: 'text particles brighten 1.25× once the camera has stayed idle within 1° of E for 5 s (a reveal for a viewer who holds the angle, which shots taken on arrival do not show)',
-    edits: [NEAR_UNIFORM, nearSet(dwell('idle')), TEXT_BRIGHTER, DWELL_DECL] },
-  { name: 'reveal-late-in-tour-hold', defect: "text particles brighten 1.25× once the tour's hold at E has run 2.5 s of its 5 s (a reveal late in the hold, which a shot as the tour arrives at E does not show; R5-2)",
-    edits: [NEAR_UNIFORM, nearSet(tourHold(2500)), TEXT_BRIGHTER] },
+    edits: [TEXT_DECL, NEAR_UNIFORM, nearSet(dwell('idle')), TEXT_BRIGHTER, DWELL_DECL] },
+  { name: 'reveal-late-in-tour-hold', defect: "text particles brighten 1.25× once the tour's hold at E has run 1.2 s of its 3 s (a reveal late in the hold, which a shot as the tour arrives at E does not show; R5-2)",
+    edits: [TEXT_DECL, NEAR_UNIFORM, nearSet(tourHold(1200)), TEXT_BRIGHTER] },
   { name: 'reveal-gold', defect: 'text particles take a gold tint near E, 30% at E (a reveal)',
-    edits: [NEAR_UNIFORM, NEAR_SET, GOLD_TINT] },
+    edits: [TEXT_DECL, NEAR_UNIFORM, NEAR_SET, GOLD_TINT] },
   { name: 'reveal-green', defect: 'text particles take a green tint near E in every draw, red and blue × 0.739 and green × 1.10 at E, which leaves their luminance and warmth unchanged (a colour reveal off the warmth axis, R5-1)',
-    edits: [NEAR_UNIFORM, NEAR_SET, GREEN_TINT] },
+    edits: [TEXT_DECL, NEAR_UNIFORM, NEAR_SET, GREEN_TINT] },
   { name: 'reveal-gold-shipped', defect: 'text particles take a gold tint near E, 30% at E, in the shipped draw only (no layer set), so the layer=text and layer=ambient draws that the alike checks compare show none (a colour reveal that the light sums do not see)',
-    edits: [NEAR_UNIFORM, nearSet(`layer === null ? ${NEAR} : 0`), GOLD_TINT] },
+    edits: [TEXT_DECL, NEAR_UNIFORM, nearSet(`layer === null ? ${NEAR} : 0`), GOLD_TINT] },
   { name: 'reveal-gold-after-glide', defect: 'once "Find the angle" has glided to E, text particles take a gold tint near E, 30% at E (a colour reveal that views set by URL do not show)',
-    edits: [NEAR_UNIFORM, nearSet(`found ? ${NEAR} : 0`), GOLD_TINT, ...FOUND] },
+    edits: [TEXT_DECL, NEAR_UNIFORM, nearSet(`found ? ${NEAR} : 0`), GOLD_TINT, ...FOUND] },
   { name: 'reveal-bigger', defect: 'text particles grow near E, up to 1.25× wider at E (a reveal)',
-    edits: [NEAR_UNIFORM, NEAR_SET, ['float core = wsize * u_ppu / depth;', 'wsize *= 1.0 + 0.25 * text * u_near;\n  float core = wsize * u_ppu / depth;']] },
+    edits: [TEXT_DECL, NEAR_UNIFORM, NEAR_SET, ['float core = wsize * u_ppu / depth;', 'wsize *= 1.0 + 0.25 * text * u_near;\n  float core = wsize * u_ppu / depth;']] },
   { name: 'reveal-sharper', defect: 'text particles come into focus near E, their blur cut by 75% at E (a reveal)',
-    edits: [NEAR_UNIFORM, NEAR_SET, ['float coc = u_aperture * u_ppu * abs(depth - u_focus) / (depth * u_focus);', 'float coc = u_aperture * u_ppu * abs(depth - u_focus) / (depth * u_focus);\n  coc *= 1.0 - 0.75 * text * u_near;']] },
+    edits: [TEXT_DECL, NEAR_UNIFORM, NEAR_SET, ['float coc = u_aperture * u_ppu * abs(depth - u_focus) / (depth * u_focus);', 'float coc = u_aperture * u_ppu * abs(depth - u_focus) / (depth * u_focus);\n  coc *= 1.0 - 0.75 * text * u_near;']] },
   { name: 'text-always-brighter', defect: 'text particles carry 1.4× the light of ambient ones at every angle, so the words read by brightness and the text particles stand out everywhere',
-    edits: [[PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.4 * text));']] },
+    edits: [TEXT_DECL, [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.4 * text));']] },
   { name: 'scene-glows-at-angle', defect: 'every particle brightens near E, up to 1.4× at E, so the whole cloud glows brighter as the camera nears the angle',
     edits: [NEAR_UNIFORM, NEAR_SET, [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 + 0.4 * u_near));']] },
   { name: 'weak-relocation', defect: 'β falls back to 0.2, the rate the reveal used to make up for, so the words barely show at E',
     edits: [[BETA_LINE, 'const BETA_DEFAULT = 0.2;']] },
   { name: 'no-density-compensation', defect: 'text particles come from anywhere in the cloud and land anywhere on the strokes, not from near their landing points, so nothing offsets the extra density along the stroke sight lines',
-    edits: [['if (b <= 0 || chance >= BETA * b / mask.bmax) continue;', 'if (chance >= 0.3 * BETA / 0.85) continue;'],
-      ['const vx = ux + mask.sigma * landGauss(), vy = uy + mask.sigma * landGauss();', 'const vx = 1.6 * landGauss(), vy = -0.7 + 1.3 * landGauss();']] },
+    edits: [['acc += BETA * w[k] / scaleDown;', 'acc += 0.3 * BETA / 0.85 / n;'],
+      ['const vx = ux[k] + sigma * lands[k](), vy = uy[k] + sigma * lands[k]();', 'const vx = 1.6 * lands[k](), vy = (k ? 0 : -0.7) + 1.3 * lands[k]();']] },
   { name: 'text-drifts-sideways', defect: 'text particles get the ambient drift across their sight lines',
-    edits: [['p += a_dir * s;', 'p += a_dir * s + drift(a_pos, t);']] },
+    edits: [['vec3 p = a_pos + a_dir * (u_swell * sin(swell(a_pos, t)));', 'vec3 p = a_pos + a_dir * (u_swell * sin(swell(a_pos, t))) + (code >= 8 ? drift(a_pos, t) : vec3(0.0));']] },
   { name: 'zoom-dollies-eye', defect: 'zoom moves the eye toward the cloud instead of narrowing the field of view (view() still reports the zoomed fov)',
     edits: [['const th = tanHalf(), aspect = w / h;', 'const th = baseTan(viewAspect()), aspect = w / h;'],
       ['const eye = eyeDir(cam.az, cam.el).map((v) => v * R);', 'const eye = eyeDir(cam.az, cam.el).map((v) => v * R / cam.zoom);']] },
   { name: 'no-relocation', defect: 'text particles are chosen but never moved onto the strokes',
-    edits: [['P[i * 3 + a] = E_POS[a] + dirs[i * 3 + a] * dist;', '/* mutant: no relocation */']] },
+    edits: [['P[i * 3 + a] = pos[a] + dirs[i * 3 + a] * dist;', '/* mutant: no relocation */']] },
   { name: 'flat-text', defect: 'text particles are moved onto the text plane, a flat sign readable from the side',
-    edits: [['P[i * 3 + a] = E_POS[a] + dirs[i * 3 + a] * dist;', 'P[i * 3 + a] = E_POS[a] + dirs[i * 3 + a] * tl;']] },
+    edits: [['P[i * 3 + a] = pos[a] + dirs[i * 3 + a] * dist;', 'P[i * 3 + a] = pos[a] + dirs[i * 3 + a] * tl;']] },
   { name: 'mirrored', defect: 'the projection mirrors the frame left to right (-f / aspect)',
     edits: [['new Float32Array([f / aspect,', 'new Float32Array([-f / aspect,']] },
   { name: 'turned-180', defect: 'the view matrix turns the frame 180° (its cross product is flipped)',
@@ -119,21 +124,21 @@ const PAGE_MUTANTS = [
   { name: 'keys-reversed', defect: 'left and right arrow keys are swapped',
     edits: [['ArrowLeft: [-step, 0], ArrowRight: [step, 0]', 'ArrowLeft: [step, 0], ArrowRight: [-step, 0]']] },
   { name: 'find-jumps', defect: '"Find the angle" jumps to E instead of gliding',
-    edits: [["mode = 'glide';\n  beginAnim(target, GLIDE_MS, easeCubic);", "Object.assign(cam, target); mode = 'idle';"]] },
+    edits: [["mode = 'glide';\n  heading = k;\n  beginAnim(target, GLIDE_MS, easeCubic);", "Object.assign(cam, target); mode = 'idle';"]] },
   { name: 'snap-disabled', defect: 'releasing near E never snaps',
-    edits: [['if (d < SNAP_DEG && d > 1e-4 && d <= gestureFrom + 0.1) {', 'if (false) {']] },
+    edits: [['if (!(d < SNAP_DEG && d > 1e-4 && d <= gestureFrom[k] + 0.1)) continue;', 'if (true) continue;']] },
   { name: 'pinch-ignored', defect: 'two-finger pinch does not zoom',
     edits: [['cam.zoom = clampZoom(pinch.zoom * spread() / pinch.d);', '/* mutant: pinch ignored */']] },
   { name: 'tour-ignores-input', defect: 'a press during the tour does not stop it',
     edits: [["  stopAuto();\n  mode = 'drag';", "  if (mode !== 'tour') { stopAuto(); mode = 'drag'; }"]] },
   { name: 'tour-restarts', defect: 'the tour restarts after 7 s without input (the round-0 behaviour)',
-    edits: [["} else if (mode === 'idle' && tourAllowed() && lastInput === -Infinity) {", "} else if (mode === 'idle' && tourAllowed() && now - lastInput > 7000) {"]] },
+    edits: [["} else if (mode === 'idle' && !autoplayed && lastInput === -Infinity && (capture || tourAllowed())) {", "} else if (mode === 'idle' && now - lastInput > 7000 && (capture || tourAllowed())) {"]] },
   { name: 'zoom-cancels-animation', defect: 'wheel or +/- during a glide or snap cancels it (the round-0 behaviour)',
     edits: [["if (anim && anim.target && (mode === 'snap' || mode === 'glide')) { anim.z0 = cam.zoom; anim.dz = 0; anim.target.zoom = cam.zoom; }\n  else if (mode !== 'drag') stopAuto();", "if (mode !== 'drag') stopAuto();"]] },
   { name: 'zoom-not-carried', defect: 'a zoom during a glide or snap is undone as it lands: zoomBy sets anim.z0 and anim.dz but not the target zoom',
     edits: [['anim.z0 = cam.zoom; anim.dz = 0; anim.target.zoom = cam.zoom; }', 'anim.z0 = cam.zoom; anim.dz = 0; }']] },
   { name: 'pinch-keeps-first-finger-start', defect: 'a second finger never raises gestureFrom, so a pinch at E with a little slip ends off E (the round-0 behaviour)',
-    edits: [['  else if (Math.hypot(gestureDrag.x, gestureDrag.y) < TOUCH_SLOP) gestureFrom = Math.max(gestureFrom, alignDeg());\n', '']] },
+    edits: [['  else if (Math.hypot(gestureDrag.x, gestureDrag.y) < TOUCH_SLOP) gestureFrom = gestureFrom.map((g, k) => Math.max(g, alignTo(k)));\n', '']] },
   { name: 'pinch-forgives-drag-away', defect: 'a second finger raises gestureFrom even after a deliberate drag away from E, so the pinch then snaps to E (the R1-5 behaviour)',
     edits: [['else if (Math.hypot(gestureDrag.x, gestureDrag.y) < TOUCH_SLOP) gestureFrom', 'else gestureFrom']] },
   { name: 'reduced-motion-coasts', defect: 'with reduced motion a fling still coasts (the round-0 behaviour)',
@@ -152,7 +157,7 @@ const PAGE_MUTANTS = [
     edits: [['#scene:focus-visible { outline: 2px solid var(--focus); outline-offset: -4px; }', '#scene:focus-visible { outline: 2px solid var(--focus); outline-offset: 0px; }']] },
   { name: 'reduced-motion-ignored', defect: 'reduced motion still tours and glides',
     edits: [['const tourAllowed = () => tourParam && !reduced;', 'const tourAllowed = () => tourParam;'],
-      ["  if (reduced) { Object.assign(cam, target); mode = 'idle'; return; }\n", '']] },
+      ["  if (reduced) { Object.assign(cam, { az: wrapPi(target.az), el: target.el, zoom: target.zoom }); mode = 'idle'; return; }\n", '']] },
   { name: 'console-error', defect: 'the script logs a console error',
     edits: [["'use strict';", "'use strict';\nconsole.error('mutant: injected console error');"]] },
   { name: 'external-script', defect: 'the page loads a script from another host',
@@ -160,9 +165,24 @@ const PAGE_MUTANTS = [
   { name: 'wide-element', defect: 'an element wider than a phone causes horizontal overflow',
     edits: [['<body>', '<body>\n<div style="width:600px;height:4px"></div>']] },
   { name: 'no-focus-outline', defect: 'keyboard focus on "Find the angle" has no visible outline',
-    edits: [['#find:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }', '#find:focus-visible { outline: none; }']] },
+    edits: [['.actions button:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }', '.actions button:focus-visible { outline: none; }']] },
   { name: 'no-fallback-message', defect: 'without WebGL2 the page shows nothing',
     edits: [["  document.getElementById('nogl').hidden = false;\n", '']] },
+  // Work unit 1: six messages in one cloud, the sequence and capture mode.
+  { name: 'sequence-order-swapped', defect: 'the sequence shows "a" before "What" (the tour, Play and capture all follow it)',
+    edits: [['for (let k = 0; k < M.length; k++) seq.steps.push({ go: k }, { hold: HOLD_MS, at: k });', 'for (const k of [0, 1, 3, 2, 4, 5]) seq.steps.push({ go: k }, { hold: HOLD_MS, at: k });']] },
+  { name: 'eye-moved', defect: '"What" is formed for an eye 6° east of the one the page reports and the sequence holds at (158°, 16°), so from there it is smeared',
+    edits: [['const M = MESSAGES.map((msg) => ({ ...msg, frame: eyeFrame(msg.az, msg.el), layout: layout(msg) }));', "const M = MESSAGES.map((msg) => ({ ...msg, frame: eyeFrame(msg.az + (msg.name === 'what' ? 6 : 0), msg.el), layout: layout(msg) }));"]] },
+  { name: 'message-without-particles', defect: '"beautiful" gets no particles (its relocation weight is 0), so its eye shows only the cloud',
+    edits: [["{ name: 'beautiful', az: 278, el: 16, lines: ['beautiful'], slant: SLANT, cap: 3 }", "{ name: 'beautiful', az: 278, el: 16, lines: ['beautiful'], slant: SLANT, cap: 3, weight: 0 }"]] },
+  { name: 'reveal-near-a', defect: 'text particles brighten near the eye of "a", up to 1.25× there (a reveal at an eye other than hello world\'s)',
+    edits: [TEXT_DECL, NEAR_UNIFORM, nearSet(nearMessage(3)), TEXT_BRIGHTER] },
+  { name: 'capture-shows-readout', defect: 'capture mode hides the buttons and the hint but leaves the AZ/EL readout on screen',
+    edits: [['.capture .bar, .capture #hint { display: none; }', '.capture .actions, .capture #hint { display: none; }']] },
+  { name: 'capture-click-interrupts', defect: 'in capture mode a click on the scene takes the camera, which stops the looping sequence',
+    edits: [["if (capture || (e.pointerType === 'mouse' && e.button !== 0)) return;", "if (e.pointerType === 'mouse' && e.button !== 0) return;"]] },
+  { name: 'find-skips-a', defect: '"Find the angle" skips "a": after "What" it goes straight to "beautiful"',
+    edits: [['const k = (cursor + 1) % M.length, target = msgTarget(k, Math.min(cam.zoom, 1));', 'const k = (cursor + (cursor === 2 ? 2 : 1)) % M.length, target = msgTarget(k, Math.min(cam.zoom, 1));']] },
 ];
 
 // The hygiene gate scans text, including this file, so the defects below are assembled from
