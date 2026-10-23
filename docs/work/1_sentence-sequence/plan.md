@@ -193,8 +193,15 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
 - [x] Review round 2 of repair round 2 (`6adc5b8..8560485`), both lanes on a clone of `8560485`, 2026-10-22. Dispositions are in [reviews/2_integration.md](reviews/2_integration.md).
   - 2 major and 6 minor findings, F88–F95; none is against the owner's rule.
   - The full proof of `8560485` was stopped after 17 of 130 mutants (all killed, control green), so repair round 3 could run first.
-- [ ] Repair round 3 (R3): F87–F95, one milestone.
-- [ ] Full mutation proof on the final revision, the only browser workload while it runs, beside review round 3.
+- [x] Repair round 3 (R3), W25: F87–F95, committed as `df0dac7` on 2026-10-22.
+  - `npm test`: 48 of 48 in three runs (229.8–231.7 s).
+  - 34 named mutants, 2 of them new: all killed by checks after a green control (8,149 s).
+  - Rendering unchanged: 27 of 27 acceptance digests are identical.
+  - The tour picture page now clicks "Find the angle" through all six eyes after the tour and pictures each landing.
+  - The budget probe's sample is bounded by the animation frame, so a double draw now reads 96,000 particles at 5.45–5.90×.
+  - Timing misses take the error path, and a missed capture hold is retried once on the loop's next pass.
+  - Exact counts replace "exactly 0" claims: every picture shows 0 differing channel values. The identity of the shipped render with the two layers differs by one level in 7–623 values a frame.
+- [ ] Full mutation proof on `df0dac7`, the only browser workload while it runs, beside review round 3.
 - [ ] Republish the artifact, then the devlog, Outcome and cleanup.
 
 ## Outcome
