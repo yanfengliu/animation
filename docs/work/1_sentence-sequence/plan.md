@@ -205,7 +205,8 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
   - Eight findings, F96–F103, none against the owner's rule. Codex rates two major, Claude rates all minor.
   - They repeat four classes that rounds 1–3 each found again after repairs. So, by fleet R11's reassessment, gate behaviour is not repaired further: F96–F102 become stated bounds, and F103's doc claims are corrected. The owner can ask for another round; repair rounds used: 3 of 5.
 - [ ] Full mutation proof on `df0dac7`, restarted at 18:16 after a session restart, the only browser workload while it runs. Then audit its kills for any mutant that only a timing line kills (F98–F100).
-- [ ] Docs pass for F96–F103 in AGENTS.md and the defect register now. The test-file comments wait until after the proof, then one final `npm test` on the final revision.
+- [x] Docs pass for F96–F103 in AGENTS.md and the defect register, W26, committed as `daaffcc` on 2026-10-22: the bounds, the corrected claims, and a note that kills printed at the timing lines may be timing misses.
+- [ ] After the proof: apply the test-file comment fixes (`tmp/wu1-final-comment-fixes.md`, ignored), then run one final `npm test` on the final revision.
 - [x] Artifact republished as version 4 (version id `1792722001-a3c9`) at https://claude.ai/artifact/DXryp6rehkTohF7Eumat5f on 2026-10-22. It holds `df0dac7`'s `index.html` with the document wrapper stripped (9 lines), and is private until the owner shares it.
 - [ ] The devlog, the Outcome with each acceptance criterion checked, and cleanup.
 
