@@ -130,6 +130,22 @@ export async function until(page, fn, arg, timeout, what) {
   return Date.now() - t0;
 }
 
+// Polls fn like until(), for a state a check needs before it can judge (a move under way, frames
+// enough to read). A timeout there says the test could not set up its check, not that the page
+// broke a rule, so it throws a plain Error, which tests/mutate.mjs counts as an error, never as a
+// mutant's kill (review round 2, F90).
+export async function setup(page, fn, arg, timeout, what) {
+  const t0 = Date.now();
+  try {
+    await page.waitForFunction(fn, arg, { timeout, polling: 25 });
+  } catch (err) {
+    if (err?.name !== 'TimeoutError') throw err;
+    const s = await state(page);
+    throw new Error(`${what}: not reached within ${timeout} ms, so the check could not be set up; the page reports ${JSON.stringify(s)}`);
+  }
+  return Date.now() - t0;
+}
+
 // A real mouse drag on the canvas: press at `from`, move by `by` in `steps` steps, hold still
 // for `holdMs` (so the release carries no velocity), release.
 export async function drag(page, from, by, { steps = 10, stepMs = 16, holdMs = 250 } = {}) {

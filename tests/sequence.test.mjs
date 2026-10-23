@@ -1,21 +1,26 @@
 // Gate: the sequence of the six messages and capture mode, through real input, and the picture at
-// the sequence's holds.
+// the sequence's holds and at "Find the angle" landings.
 // Bound: headless Chromium with SwiftShader WebGL2, the shipped page with the listed query strings,
 // Playwright mouse, wheel and keyboard input and reduced-motion emulation. The camera's path is read
 // on 390×300 CSS px pages and the pictures on 640×400 ones. The page is read only through
 // window.__cloud, and frame by frame through an observer that wraps requestAnimationFrame, passes
 // every frame through unchanged and records what the page reports after each one: mode(), target()
-// and view(). The observer also records when the page can first hear a change of the
-// reduced-motion preference, and each key press: its listeners are created before the page's own,
-// so it hears each change and each key first, in the same task. Positions are compared with the
-// eyes in tests/lib/messages.mjs, not the ones the page reports.
+// and view(), with the time and the frame's own stamp, the timestamp the page's frame callback gets
+// and times its moves by. The observer also records when the page can first hear a change of the
+// reduced-motion preference, each key press and each click: its listeners are created before the
+// page's own, so it hears each first, in the same task. Positions are compared with the eyes in
+// tests/lib/messages.mjs, not the ones the page reports. Durations that the page times are judged
+// by the frames' stamps, which a frame drawn late does not move (review round 2, F90, F92).
 // Proves:
 // - the tour at load (a visitor's URL, no query) holds at the start view, then glides to each
 //   message's eye in sequence order and holds there exactly: every frame of a hold within 1e-6° of
-//   the eye, for at least HOLD_MIN_MS of its 3 s, with target() naming that message (only its last
-//   frames, within NEXT_MAX_MS, may already name the next one), and target() naming the next
-//   message all the way through the glide to it. It then stops, idle exactly at "world", and the
-//   page reports its six messages with these eyes in this order;
+//   the eye, the hold lasting at least HOLD_MIN_MS of its 3 s by the frames' stamps, target() naming
+//   that message, and target() naming the next message all the way through the glide to it. The
+//   glide to the next message begins in the frame that ends the hold, which already names it, and
+//   moves the camera 1e-6° only about 5 ms later by the page's clock; so only frames from the first
+//   one that names it may name it, and each later one still at the eye must be stamped within
+//   NEXT_STAMP_MS of the end of that first one. It then stops, idle exactly at "world", and the page
+//   reports its six messages with these eyes in this order;
 // - "Find the angle" names the next message in sequence order at each click and wraps from "world"
 //   to hello world (seven clicks from the start view). Each click glides, every frame of the glide
 //   names that message, and the camera comes to rest exactly at its eye (within 1e-6°) and stays
@@ -24,14 +29,17 @@
 //   hold there of at least HOLD_MIN_MS, then on toward the face), and a press stops it for good (once
 //   the camera comes to rest, after a snap back to hello world's eye if the press was that close,
 //   it stays put for 1.5 s);
-// - with reduced motion the page does not play the sequence at load, and Play cuts: from the first
-//   frame after the click every frame is exactly at an eye, hello world for at least 3.5 s of its
-//   4 s and then the face;
+// - with reduced motion the page does not play the sequence at load, and Play cuts: every frame
+//   after the click is in mode tour exactly at hello world's eye and then at the face's, and no
+//   frame stamped less than CUT_HOLD_MIN_MS after the click is at the face (the cut hold is 4 s);
 // - reduced motion switched on SWITCH_MS into a glide toward hello world, of Play from "world" and
-//   of capture mode from the start view: from the first frame after the page hears the change,
-//   every frame is exactly at an eye, hello world for at least 3.5 s of its 4 s cut hold (timed from
-//   the change, where the page begins it) and then the face. The frame before the change must be
-//   mid-glide, or the check fails;
+//   of capture mode from the start view, cuts at once: every frame after the page hears the change
+//   is in mode tour exactly at hello world's eye and then at the face's, and no frame stamped less
+//   than CUT_HOLD_MIN_MS after the change is at the face (the cut hold begins at the change). The
+//   frame before the change must be mid-glide;
+// - for both cut holds a frame must be stamped in the last CUT_WINDOW_MS before that bound, or a hold
+//   that ended there would pass unseen. A missed setup condition fails the test as an error, not a
+//   check, since the check could not judge (F90);
 // - none of these pages logs a console error or a page error;
 // - #capture hides #readout, #hint, #find and #play (checkVisibility) and the cursor (cursor: none)
 //   and plays the sequence at load; a click, a drag, a wheel step and the keys ArrowLeft, ArrowUp
@@ -43,8 +51,10 @@
 //   frames from the start of the page up to that hold at hello world, and none after it, so a check
 //   that starts late, when the loop has moved on, reads the same frames; and Escape ends it: the
 //   chrome shows again, the cursor is "grab" and the camera stops at once. Escape is pressed while
-//   the loop glides, and from the first frame after the press every frame for 1.3 s is idle where
-//   the frame before the press was; that frame must be moving in mode "tour", or the check fails.
+//   the loop glides on, at least ESC_LEAD_DEG from the eye it glides to, and from the first frame
+//   after the press every frame for 1.3 s is idle where the frame before the press was. That frame
+//   must be mid-glide (in mode tour, at no eye, moved since the frame before it), or the test fails
+//   as an error: a press in a hold's first frame could not show a glide that runs on (F91).
 //   Escape also takes the bare #capture anchor out of the address, in the same document, so going
 //   to the address with #capture again (as a viewer adding it in the address bar) starts capture
 //   mode again, chrome and cursor hidden, and a second Escape ends it and takes the anchor out again;
@@ -52,63 +62,73 @@
 //   capture mode and shows the chrome, without a page error, and the anchor stays;
 // - the pictures, with the particle clock frozen (t=0): capture mode at each of its six holds in its
 //   first pass; the tour at load at the face's hold, then idle at "world" where it ends, shot as
-//   soon as the camera rests there and again DWELL_MS later, and then Play, clicked on that page, at
-//   the face's hold; and "Find the angle" landing at each of the five later eyes (a real click from
-//   the eye before it, set by msg=<that message>), shot as soon as the camera rests there and again
-//   DWELL_MS later. Each must render as that eye set by URL (msg=<name>&t=0&tour=0), pixel for
+//   soon as the camera rests there and again DWELL_MS later; then "Find the angle", clicked on that
+//   page six times, landing at each eye from hello world round to "world", each landing shot as
+//   soon as the camera rests there (F88); then Play, clicked there, at the face's hold; and "Find
+//   the angle" landing at each of the five later eyes on pages of their own (a real click from the
+//   eye before it, set by msg=<that message>&tour=0), shot as soon as the camera rests there and
+//   again DWELL_MS later. Each must render as that eye set by URL (msg=<name>&t=0&tour=0), pixel for
 //   pixel: each shot is clipped to the central region (CENTRE, clear of the bar and the hint), and
 //   the absolute difference summed per channel is at most MAX_RESIDUAL of the reference's light
-//   over the sky (exactly 0 measured). Each hold is shot at least SHOT_LEAD_MS into its 3 s, by the
-//   page's own frames, with the page reporting the camera exactly at the eye (within 1e-6°), in mode
-//   "tour" and naming that message, before and after the shot, and reporting capture mode on for
-//   the capture shots only; each rest likewise in mode "idle", the second shot at least DWELL_MS
-//   after the first frame there. The page's state is read once just before the shot and once just
-//   after it, and the shot is decoded after the second read.
-//   A hold shot whose reads find the camera gone from its eye, the second read more than HOLD_MS
-//   after the hold began, outran the hold. That is a timing miss, not a page defect: its picture is
-//   not compared, and a miss fails the test as an error, never as a check, so it cannot count as a
-//   mutant's kill. Gone from the eye within HOLD_MS is a check, as is any residual.
+//   over the sky. Each shot's diagnostic also counts exactly the channel values that differ (F87).
+//   Each hold is shot at least SHOT_LEAD_MS into its 3 s, by the page's own frames, with the page
+//   reporting the camera exactly at the eye (within 1e-6°), in mode "tour" and naming that message,
+//   before and after the shot, and reporting capture mode on for the capture shots only; each rest
+//   likewise in mode "idle", the second shot at least DWELL_MS after the first frame there. The
+//   page's state is read once just before the shot and once just after it, and the shot is decoded
+//   after the second read.
+//   A hold shot missed its hold when the hold came and went before the test could shoot it, or when
+//   its reads find the sequence moved on (target() naming the next message) with the second read
+//   more than HOLD_MS after the stamp of the hold's first frame, where the page began it. That is a
+//   timing miss, not a page defect: its picture is not compared. In capture mode a missed hold is
+//   shot once more on the loop's next pass (F93); a second miss, or a miss at the tour's or Play's
+//   hold, fails the test as an error, never as a check, so it cannot count as a mutant's kill.
+//   Leaving the eye in any other way, or within HOLD_MS, is a check, as is any residual.
 //   That each shot starts at least its lead into the hold or rest holds by construction: the test
 //   waits until then by the page's own clock before its first read, so no page can turn it red;
 //   it guards against that wait not happening.
 // The load tour and capture pages run in their own browsers from `before`, and so do the picture
-// pages: capture mode in a fourth, and the tour at load, then Play on the same page, in a fifth.
-// Once capture's six holds and the tour's hold at the face are shot, the five "Find the angle"
-// landings start at once, two in the fourth, one in the fifth and two in a sixth, where the
-// references render after them; a landing and the tour's rest at "world" have no end, so their
-// shots may be slow.
+// pages: capture mode in a fourth, and the tour at load, its landings and Play on one page, in a
+// fifth. Once capture's six holds and the tour's hold at the face are shot, the five other "Find the
+// angle" pages start at once, two in the fourth, one in the fifth and two in a sixth, where the
+// references render after them. The tour page's landings wait for capture's holds, and its Play for
+// the five landing pages and the references, so no hold is shot while a landing page or a reference
+// load runs. A landing and the tour's rest at "world" have no end, so their shots may be slow.
 // The shorter tests run in a third. So the file takes about as long as the tour, its dwell at
-// "world" and Play's way to the face, about 70 s. It runs in a phase of its own, beside only the
-// hygiene scan (tests/lib/phases.mjs).
+// "world", six landings and Play's way to the face, about 85 s. It runs in a phase of its own,
+// beside only the hygiene scan (tests/lib/phases.mjs).
 // Does not prove: how the glides look or feel (easing, speed); the picture mid-glide, in a hold's
 // first SHOT_LEAD_MS or after its shot, at Play's and the load tour's other holds (hello world's
-// hold in the tour at load is tests/illusion.test.mjs's), in capture's later passes, at a rest
-// (the tour's end at "world" or a Find landing that came from the eye before it) between its two
-// shots or after DWELL_MS, after a Find landing that came from elsewhere (hello world's landing is
-// tests/illusion.test.mjs's), Play from elsewhere than "world", at other viewports or zooms, or
-// with the particle clock running; other input during the load tour or Play than the presses
-// tested (tests/motion.test.mjs covers the load tour's press); reduced motion switched on during a
-// hold or during the load tour (tests/motion.test.mjs covers a "Find the angle" glide, a snap and
-// a coast); Escape during a hold of capture mode; capture's own timing (2 s at the start view; a
-// looped pass about 44 s), the second and later passes of the capture loop, a viewer's real address
-// bar (the test navigates the page to the address with the anchor), or behaviour under slow frame
-// rates.
+// hold in the tour at load is tests/illusion.test.mjs's), in capture's later passes (but for a
+// retried hold), at a rest between its two shots or after DWELL_MS (the tour page's landings are shot
+// on arrival only), after histories other than those above (such as "Find the angle" clicked
+// during the tour or after Play, or a landing after a drag, a key, a zoom or a snap), Play from
+// elsewhere than "world", at other viewports or zooms, or with the particle clock running; other
+// input during the load tour or Play than the presses tested (tests/motion.test.mjs covers the load
+// tour's press); reduced motion switched on during a hold or during the load tour
+// (tests/motion.test.mjs covers a "Find the angle" glide, a snap and a coast); Escape during a hold
+// of capture mode; capture's own timing (2 s at the start view; a looped pass about 44 s), the
+// second and later passes of the capture loop, a viewer's real address bar (the test navigates the
+// page to the address with the anchor), or behaviour under slow frame rates.
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startBrowser, newContext, waitFrames, state, until, drag, sleep, render, PAGE_URL } from './lib/harness.mjs';
+import { startBrowser, newContext, waitFrames, state, until, setup, drag, sleep, render, PAGE_URL } from './lib/harness.mjs';
 import { decodePng, crop, partsResidual } from './lib/image.mjs';
 import { MESSAGES, NAMES, START, angleDeg, eyeAt } from './lib/messages.mjs';
 
 const SMALL = { width: 390, height: 300 };
 const WIDE = { width: 640, height: 400 };           // the picture pages: CENTRE (51–589 × 60–340 px) clears the bar (its bottom at 54 px) and the hint (its top at 351 px)
 const C = { x: 195, y: 140 };                       // canvas, clear of the bar and the hint
-const HOLD_MS = 3000;                               // each hold of the sequence, as in index.html: a hold shot whose second read comes later than this after the hold began, with the camera gone, outran the hold
+const HOLD_MS = 3000;                               // each hold of the sequence, as in index.html: a hold shot whose second read comes later than this after the stamp of the hold's first frame, with the sequence moved on, missed the hold
 const HOLD_MIN_MS = 2500;                           // each hold is HOLD_MS; a frame or two of slack
 const START_HOLD_MIN_MS = 1200;                     // the load tour's first hold at the start view is 1500 ms
 const CUT_HOLD_MIN_MS = 3500;                       // with reduced motion Play holds CUT_HOLD_MS = 4000 at each eye
 const TOUR_MS = 70000;                              // the load tour takes about 45 s and the capture loop's first pass about 51 s; time out well past both
-const NEXT_MAX_MS = 100;                            // a hold's last frames may already name the next message for this long (see checkPasses)
+const NEXT_STAMP_MS = 10;                           // a frame still at a hold's eye after the glide to the next message began must be stamped within this of the end of the frame that began it: smootherstep moves the camera 1e-6° in about 5.3 ms of a 4.4 s, 58° glide, by the page's clock (see checkPasses)
+const CUT_WINDOW_MS = 1000;                         // a frame must be stamped in this last stretch before CUT_HOLD_MIN_MS for a cut-hold check to judge: 500 ms missed twice in 34 mutant runs whose pages cut as the real one does (2026-10-22)
 const SWITCH_MS = 1000;                             // reduced motion switches on this long into a glide of 3.6 s (capture) or 4.35 s (Play)
+const ESC_LEAD_DEG = 5;                             // Escape is pressed at least this far from the eye the capture loop glides to, about 0.8 s before it lands
+const LOOP_WAIT_MS = 60000;                         // capture's next pass, about 44 s on, reaches a missed hold again within this
 const HOLD_WAIT_MS = 25000;                         // a picture page reaches each next hold within one glide and one hold (about 7.5 s)
 const SHOT_LEAD_MS = 1500;                          // each picture starts at least this far into its 3 s hold
 const DWELL_MS = 8000;                              // after each "Find the angle" landing the camera rests this long before its second shot, as at E in tests/illusion.test.mjs; the dwell mutant reveals after 5000
@@ -117,35 +137,39 @@ const CENTRE = [0.08, 0.92, 0.15, 0.85];            // the central region of tes
 // CENTRE in the pixels of a 640×400 page, rounded as partsResidual rounds a region: every picture is
 // clipped to it, which makes the screenshot cheaper (tests/illusion.test.mjs does the same).
 const CLIP = { x: Math.round(CENTRE[0] * WIDE.width), y: Math.round(CENTRE[2] * WIDE.height), width: Math.round(CENTRE[1] * WIDE.width) - Math.round(CENTRE[0] * WIDE.width), height: Math.round(CENTRE[3] * WIDE.height) - Math.round(CENTRE[2] * WIDE.height) };
-const MAX_RESIDUAL = 0.001;                         // per channel, Σ|shot − reference| over the reference's light, as in tests/illusion.test.mjs: exactly 0 measured at every hold and landing; 0.116–0.153 with text 1.25× brighter there (the reveal-in-* mutants)
+const MAX_RESIDUAL = 0.001;                         // per channel, Σ|shot − reference| over the reference's light, as in tests/illusion.test.mjs; each shot's diagnostic counts the channel values that differ; 0.116–0.153 with text 1.25× brighter there (the reveal-in-* mutants)
 
-// Records, after each animation frame, [time, mode, target, az, el] as the page reports them; for
-// each change of the reduced-motion preference, [time, matches] as the page can first hear it; and
-// for each key press, [time, key] as the page can first hear it (a capture listener on window).
+// Records, after each animation frame, [time, mode, target, az, el, stamp] as the page reports them
+// (stamp: the frame's own timestamp, which the page's frame callback gets and times its moves by);
+// for each change of the reduced-motion preference, [time, matches]; for each key press, [time,
+// key]; and for each click, [time, the id of what was clicked]; each as the page can first hear it
+// (capture listeners on window).
 const OBSERVER = () => {
   const raf = window.requestAnimationFrame.bind(window);
   window.__log = [];
   window.__heard = [];
   window.__keys = [];
+  window.__clicks = [];
   matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (e) => window.__heard.push([performance.now(), e.matches]));
   window.addEventListener('keydown', (e) => window.__keys.push([performance.now(), e.key]), true);
+  window.addEventListener('click', (e) => window.__clicks.push([performance.now(), e.target && e.target.id]), true);
   window.requestAnimationFrame = (cb) => raf((ts) => {
     cb(ts);
     const c = window.__cloud;
-    if (c && c.ready) { const v = c.view(); window.__log.push([performance.now(), c.mode(), c.target(), v.az, v.el]); }
+    if (c && c.ready) { const v = c.view(); window.__log.push([performance.now(), c.mode(), c.target(), v.az, v.el, ts]); }
   });
 };
 
 // The log as runs of frames with the same mode and the same place: "start" (the start view),
 // a message's name (its eye), or "moving". Each run keeps its first and last time, and its frames'
-// times and targets in order.
+// times, stamps and targets in order.
 const where = (az, el) => { const k = eyeAt({ az, el }); return k >= 0 ? NAMES[k] : angleDeg({ az, el }, START) <= 1e-6 ? 'start' : 'moving'; };
 function runs(log) {
   const out = [];
-  for (const [t, mode, target, az, el] of log) {
+  for (const [t, mode, target, az, el, stamp] of log) {
     const at = where(az, el), last = out[out.length - 1];
-    if (last && last.mode === mode && last.at === at) { last.t1 = t; last.times.push(t); last.targets.push(target); }
-    else out.push({ mode, at, t0: t, t1: t, times: [t], targets: [target] });
+    if (last && last.mode === mode && last.at === at) { last.t1 = t; last.times.push(t); last.stamps.push(stamp); last.targets.push(target); }
+    else out.push({ mode, at, t0: t, t1: t, times: [t], stamps: [stamp], targets: [target] });
   }
   return out;
 }
@@ -156,14 +180,18 @@ const key = (r) => `${r.mode} ${r.at}`;
 
 // The ways a run of the sequence, from run `i` of `rs` on, breaks the order: each message, from
 // `first` (an index into NAMES) for `count` messages (wrapping), must be one or more frames moving
-// toward it, all with target() naming it, then a hold exactly at its eye for at least `holdMin` ms,
-// every frame naming it. Only the hold's last frames may already name the next message in the
-// sequence, for at most NEXT_MAX_MS from the first of them to the last: on those frames the glide
-// toward it has begun but has not yet moved the camera 1e-6°. Smootherstep takes about 5 ms of a
-// 4.35 s glide, by the page's clock, to move it that far, but a frame's clock can lag the moment the
-// glide began, so under load two frames or more can fall there. The last hold may be cut short by
-// the end of the log when `openEnd` is set. Returns { broken, next } with next the index after the
-// last run checked.
+// toward it, all with target() naming it, then a hold exactly at its eye lasting at least `holdMin`
+// ms, every frame naming it. A hold lasts from the stamp of its first frame to the stamp of the
+// first frame after it: the page begins a hold in the frame that lands the glide, and ends it in the
+// first frame stamped HOLD_MS later, which is still at the eye, so a full hold spans HOLD_MS by the
+// stamps however late its frames are drawn. That last frame begins the glide to the next message
+// and already names it; the glide moves the camera 1e-6° only about 5 ms later by the page's clock
+// (smootherstep, 4.4 s for 58°), but a frame's stamp can lag the moment the glide began, so more
+// frames can fall there under load. So only the frames from the first that names the next message
+// on may name it, and each later one must be stamped within NEXT_STAMP_MS of the end of that first
+// one, its logged time, by which the glide had begun. The last hold may be cut short by the end of
+// the log when `openEnd` is set. Returns { broken, next } with next the index after the last run
+// checked.
 function checkPasses(rs, i, first, count, { holdMin = HOLD_MIN_MS, openEnd = false, mode = 'tour' } = {}) {
   const broken = [];
   for (let n = 0; n < count; n++) {
@@ -173,9 +201,13 @@ function checkPasses(rs, i, first, count, { holdMin = HOLD_MIN_MS, openEnd = fal
     if (!glide.targets.every((x) => x === name)) broken.push(`while moving toward "${name}" target() named ${[...new Set(glide.targets)].join(', ')}`);
     if (!hold || key(hold) !== `${mode} ${name}`) { broken.push(`after moving toward "${name}" the camera should hold exactly at its eye in mode ${mode}, but the log has ${hold ? key(hold) : 'nothing more'}`); break; }
     const ahead = hold.targets.findIndex((x) => x !== name), next = NAMES[(first + n + 1) % NAMES.length];
-    if (ahead >= 0 && !(hold.targets.slice(ahead).every((x) => x === next) && hold.t1 - hold.times[ahead] <= NEXT_MAX_MS)) broken.push(`during the hold at "${name}" target() named ${counted(hold.targets)}, where only frames in its last ${NEXT_MAX_MS} ms may name "${next}"`);
+    if (ahead >= 0) {
+      const late = hold.stamps.slice(ahead + 1).map((s) => s - hold.times[ahead]).filter((d) => !(d < NEXT_STAMP_MS));
+      if (!hold.targets.slice(ahead).every((x) => x === next) || late.length) broken.push(`during the hold at "${name}" target() named ${counted(hold.targets)}: only the frames from the first that names "${next}" may name it, each later one stamped within ${NEXT_STAMP_MS} ms of that first one's end, but ${late.length ? `${late.length} came up to ${Math.max(...late).toFixed(0)} ms after it` : 'another message was named'}`);
+    }
     const last = openEnd && n === count - 1;
-    if (!last && !(hold.t1 - hold.t0 >= holdMin)) broken.push(`the hold at "${name}" lasted ${(hold.t1 - hold.t0).toFixed(0)} ms, less than ${holdMin} ms`);
+    const span = (rs[i + 2] ? rs[i + 2].stamps[0] : hold.stamps[hold.stamps.length - 1]) - hold.stamps[0];
+    if (!last && !(span >= holdMin)) broken.push(`the hold at "${name}" lasted ${span.toFixed(0)} ms by its frames' stamps, less than ${holdMin} ms`);
     i += 2;
   }
   return { broken, next: i };
@@ -198,6 +230,7 @@ const visible = (page) => page.evaluate(() => Object.fromEntries(['readout', 'hi
 const cursor = (page) => page.evaluate(() => getComputedStyle(document.getElementById('scene')).cursor);
 // Whether the page is still the document that set window.__sameDocument. A read that a navigation
 // interrupts (Playwright: the execution context was destroyed) means the document was replaced.
+const logLength = (page) => page.evaluate(() => window.__log.length);
 const sameDocument = async (page) => {
   try { return await page.evaluate(() => window.__sameDocument === true); } catch (err) {
     if (/Execution context was destroyed/.test(String(err?.message))) return false;
@@ -210,25 +243,42 @@ const look = (page) => page.evaluate(() => {
   return { mode: c.mode(), target: c.target(), az: v.az, el: v.el, capture: c.capture, now: performance.now() };
 });
 
-// In the page: the time of the first frame of the run that the last logged frame belongs to, when
-// that frame is in `mode`, names the message and is exactly at its eye; otherwise null. A hold of
-// the sequence is such a run in mode tour, and a "Find the angle" landing one in mode idle.
+// In the page: [the time, the stamp] of the first frame of the run that the last logged frame
+// belongs to, when that frame is in `mode`, names the message and is exactly at its eye; otherwise
+// null. A hold of the sequence is such a run in mode tour, and a "Find the angle" landing one in
+// mode idle.
 function restFrom({ name, az, el, mode }) {
   const L = window.__log, wrap = (d) => ((d % 360) + 540) % 360 - 180;
   const at = (e) => e[1] === mode && e[2] === name && Math.abs(wrap(e[3] - az)) < 1e-6 && Math.abs(e[4] - el) < 1e-6;
   let i = L.length - 1;
   if (i < 0 || !at(L[i])) return null;
   while (i > 0 && at(L[i - 1])) i--;
-  return L[i][0];
+  return [L[i][0], L[i][5]];
+}
+// In the page: whether a frame logged from index `since` on was in that run's state.
+function cameBy({ name, az, el, mode, since }) {
+  const wrap = (d) => ((d % 360) + 540) % 360 - 180;
+  return window.__log.slice(since).some((e) => e[1] === mode && e[2] === name && Math.abs(wrap(e[3] - az)) < 1e-6 && Math.abs(e[4] - el) < 1e-6);
 }
 // Waits until the camera rests at message m's eye in `mode`, then shoots the central region (CLIP)
 // `lead` ms after the first frame there, by the page's clock, with what the page reports just
-// before and just after the shot; the shot is decoded only after the second read.
-async function shootAt(page, m, lead, mode = 'tour', wait = HOLD_WAIT_MS) {
-  const want = { ...m, mode };
-  await until(page, restFrom, want, wait, `the camera ${mode === 'tour' ? 'holding' : 'at rest'} at "${m.name}"`);
-  const from = await page.evaluate(restFrom, want);
-  if (from === null) assert.fail(`the camera left the eye of "${m.name}" before the shot could be timed`);
+// before and just after the shot; the shot is decoded only after the second read. The first frame's
+// time and stamp come from the poll that found the camera there, not from a second read (F90).
+// For a hold (mode tour) a timing miss comes back as `missed`, never as a failed check: the hold
+// came and went, from log index `since` on, before the test could shoot it, or the reads find the
+// sequence moved on to the next message, the second more than HOLD_MS after the stamp of the
+// hold's first frame. `capture` is whether the page should report capture mode.
+async function shootAt(page, m, lead, { mode = 'tour', wait = HOLD_WAIT_MS, since = 0, capture = false } = {}) {
+  const want = { ...m, mode }, place = `${mode === 'tour' ? 'holding' : 'at rest'} at "${m.name}"`;
+  let first;
+  try {
+    first = await (await page.waitForFunction(restFrom, want, { timeout: wait, polling: 25 })).jsonValue();
+  } catch (err) {
+    if (err?.name !== 'TimeoutError') throw err;
+    if (mode === 'tour' && await page.evaluate(cameBy, { ...want, since })) return { name: m.name, mode, lead, missed: `the camera was ${place} within the ${wait} ms the test waited, but it had gone before the test could shoot it` };
+    throw new assert.AssertionError({ message: `the camera ${place}: not reached within ${wait} ms; the page reports ${JSON.stringify(await state(page))}` });
+  }
+  const [from, stamp] = first;
   for (;;) {
     const left = from + lead - (await look(page)).now;
     if (left <= 0) break;
@@ -237,21 +287,43 @@ async function shootAt(page, m, lead, mode = 'tour', wait = HOLD_WAIT_MS) {
   const s0 = await look(page);
   const png = await page.screenshot({ animations: 'disabled', clip: CLIP });
   const s1 = await look(page);
-  return { name: m.name, img: decodePng(png), s0, s1, from, into: s0.now - from, lead, mode };
+  const shot = { name: m.name, img: decodePng(png), s0, s1, from, stamp, into: s0.now - from, lead, mode };
+  if (mode === 'tour') {
+    const next = NAMES[(NAMES.indexOf(m.name) + 1) % NAMES.length];
+    const held = (s) => s.mode === 'tour' && s.target === m.name && angleDeg(s, m) <= 1e-6 && s.capture === capture;
+    const movedOn = (s) => s.mode === 'tour' && s.target === next && s.capture === capture;
+    if (![s0, s1].every(held) && [s0, s1].every((s) => held(s) || movedOn(s)) && s1.now - stamp > HOLD_MS) shot.missed = `the reads found the sequence moved on to "${next}", the second ${ms(s1.now - stamp)} after the stamp of the hold's first frame`;
+  }
+  return shot;
 }
-// Opens `url` at 640×400 and shoots the holds at `eyes` in order.
+// Opens `url` (capture mode) at 640×400 and shoots its holds at `eyes` in order in the loop's first
+// pass. A hold whose shot missed is shot once more on the loop's next pass (F93); a second miss
+// stays a miss.
 async function holdShots(browser, url, eyes) {
   const { context, page, errors } = await openIn(browser, url, WIDE);
   try {
-    const shots = [];
-    for (const m of eyes) shots.push(await shootAt(page, m, SHOT_LEAD_MS));
+    const shots = [], again = [];
+    let since = 0;
+    for (const m of eyes) {
+      const s = await shootAt(page, m, SHOT_LEAD_MS, { since, capture: true });
+      since = await logLength(page);
+      (s.missed ? again : shots).push(s);
+    }
+    for (const miss of again) {
+      const s = await shootAt(page, MESSAGES[NAMES.indexOf(miss.name)], SHOT_LEAD_MS, { since, capture: true, wait: LOOP_WAIT_MS });
+      since = await logLength(page);
+      shots.push({ ...s, retried: miss.missed });
+    }
     return { shots, errors };
   } finally { await context.close(); }
 }
 // The tour at load (t=0) at 640×400: shot at the face's hold, then idle at "world", where it ends,
-// as soon as the camera rests there and again DWELL_MS later; then a real click on Play there, and
-// Play shot at the face's hold. `faceShot` resolves once the tour's hold at the face is shot.
-function tourShots(browser) {
+// as soon as the camera rests there and again DWELL_MS later. Then, once `holdsDone` says capture's
+// holds are shot, "Find the angle" clicked six times there lands at each eye from hello world round
+// to "world", each landing shot as soon as the camera rests there (F88). Then, once `quiet` says the
+// five other landing pages and the references are done, a real click on Play there, and Play shot
+// at the face's hold. `faceShot` resolves once the tour's hold at the face is shot.
+function tourShots(browser, holdsDone, quiet) {
   let shotFace;
   const faceShot = new Promise((resolve) => { shotFace = resolve; });
   const done = (async () => {
@@ -260,11 +332,20 @@ function tourShots(browser) {
       const face = await shootAt(page, MESSAGES[1], SHOT_LEAD_MS);
       shotFace();
       const world = MESSAGES[5];
-      const end = [{ ...(await shootAt(page, world, 0, 'idle', TOUR_MS)), when: 'on arrival' }];
-      end.push({ ...(await shootAt(page, world, DWELL_MS, 'idle', TOUR_MS)), when: `${DWELL_MS / 1000} s after it` });
+      const end = [{ ...(await shootAt(page, world, 0, { mode: 'idle', wait: TOUR_MS })), when: 'on arrival' }];
+      end.push({ ...(await shootAt(page, world, DWELL_MS, { mode: 'idle', wait: TOUR_MS })), when: `${DWELL_MS / 1000} s after it` });
+      await holdsDone;
+      const find = [];
+      for (const m of MESSAGES) {                   // from "world" the first click goes to hello world
+        await page.click('#find');
+        await page.mouse.move(REST.x, REST.y);
+        find.push({ ...(await shootAt(page, m, 0, { mode: 'idle' })), when: 'on landing' });
+      }
+      await quiet;
+      const since = await logLength(page);
       await page.click('#play');
-      const play = await shootAt(page, MESSAGES[1], SHOT_LEAD_MS);
-      return { face: { shots: [face], errors }, end: { shots: end, errors: [] }, play: { shots: [play], errors: [] } };
+      const play = await shootAt(page, MESSAGES[1], SHOT_LEAD_MS, { since });
+      return { face: { shots: [face], errors }, end: { shots: end, errors: [] }, find: { shots: find, errors: [] }, play: { shots: [play], errors: [] } };
     } finally { shotFace(); await context.close(); }
   })();
   return { faceShot, done };
@@ -278,8 +359,8 @@ async function findShots(browser, k) {
   try {
     await page.click('#find');
     await page.mouse.move(REST.x, REST.y);
-    const shots = [{ ...(await shootAt(page, m, 0, 'idle')), when: 'on landing' }];
-    shots.push({ ...(await shootAt(page, m, DWELL_MS, 'idle')), when: `${DWELL_MS / 1000} s after it` });
+    const shots = [{ ...(await shootAt(page, m, 0, { mode: 'idle' })), when: 'on landing' }];
+    shots.push({ ...(await shootAt(page, m, DWELL_MS, { mode: 'idle' })), when: `${DWELL_MS / 1000} s after it` });
     return { shots, errors };
   } finally { await context.close(); }
 }
@@ -312,20 +393,24 @@ before(async () => {
   // The pictures run in the background, one page per browser while holds are shot, since two
   // picture pages in one browser slowed each shot to about 0.8 s: capture mode through its six holds
   // in browser 3, and in browser 4 the tour at load, through its hold at the face and its end at
-  // "world", then Play there. A shot at a hold must end before the hold does, so the "Find the
-  // angle" pages wait until capture's holds and the tour's are shot: a page drawing beside them in
-  // a sixth browser slowed two shots to 0.5 s and 1.2 s, past their holds (W21). Then the five
-  // landings run at once, two in browser 3, one in browser 4 and two in browser 5; a landing and
-  // the tour's rest at "world" have no end, so their shots may be slow. The references render in
-  // browser 5 after the landings, since 12 page loads beside them slowed frames on the shorter
-  // tests' pages: a reduced-motion cut hold read 3.23 s, where 3.5 s is the least (2026-10-22).
-  // Play's hold at the face comes about 9 s after the landings. The pictures test awaits them all.
+  // "world", then its six landings and Play there. A shot at a hold must end before the hold does,
+  // so the five other "Find the angle" pages wait until capture's holds and the tour's are shot: a
+  // page drawing beside them in a sixth browser slowed two shots to 0.5 s and 1.2 s, past their
+  // holds (W21). Then those five run at once, two in browser 3, one in browser 4 and two in browser
+  // 5; a landing and the tour's rest at "world" have no end, so their shots may be slow. The
+  // references render in browser 5 after them, since 12 page loads beside them slowed frames on the
+  // shorter tests' pages (2026-10-22). The tour page's own landings wait for capture's holds, a
+  // retry included, and its Play for the five landing pages and the references, so no hold is shot
+  // while a landing page or a reference load runs. The pictures test awaits them all.
   const held = holdShots(browsers[3], PAGE_URL + '?t=0#capture', MESSAGES);
-  const tourPics = tourShots(browsers[4]);
+  let settle;
+  const quiet = new Promise((resolve) => { settle = resolve; });
+  const tourPics = tourShots(browsers[4], held.then(() => {}, () => {}), quiet);
   const ahead = Promise.all([held, tourPics.faceShot]);
   const found = ahead.then(() => Promise.all([3, 3, 4, 5, 5].map((b, i) => findShots(browsers[b], i + 1))))
     .then((all) => ({ shots: all.flatMap((r) => r.shots), errors: all.flatMap((r) => r.errors) }));
   const refs = found.then(() => {}, () => {}).then(() => references(browsers[5]));
+  refs.then(settle, settle);
   pictures = Promise.all([held, tourPics.done, refs, found]);
   pictures.catch(() => {});                         // the pictures test reports a failure; nothing else should
   // The two long runs start first, each in its own browser, so the shorter tests run beside them.
@@ -473,20 +558,36 @@ test('reduced motion: no sequence at load, and Play cuts from eye to eye', async
   const s0 = await state(page);
   assert.equal(s0.mode, 'idle', `with reduced motion the mode is "${s0.mode}" 1.5 s after load`);
   assert.ok(angleDeg(s0, START) <= 1e-6, `with reduced motion the camera left the start view at load (${angleDeg(s0, START).toFixed(3)}° away)`);
-  const from = (await log(page)).length;
   await page.click('#play');
   await until(page, () => window.__cloud.target() === 'face', null, 8000, 'the cut to the face');
   await sleep(200);
-  const rs = runs(await log(page, from));
-  t.diagnostic(`after Play with reduced motion: ${show(rs)}`);
-  const broken = [];
-  while (rs[0] && key(rs[0]) === 'idle start') rs.shift();   // the frames before the click
-  const pattern = rs.map(key).join(' → ');
-  if (pattern !== 'tour hello-world → tour face') broken.push(`every frame after the click must be in mode tour exactly at hello world's eye and then at the face's, but the log has ${show(rs)}`);
-  else if (!(rs[0].t1 - rs[0].t0 >= CUT_HOLD_MIN_MS)) broken.push(`the cut hold at hello world lasted ${(rs[0].t1 - rs[0].t0).toFixed(0)} ms, less than ${CUT_HOLD_MIN_MS} ms`);
-  assertNone(broken, 'with reduced motion Play must cut from eye to eye: ');
+  const { L, clicks } = await page.evaluate(() => ({ L: window.__log, clicks: window.__clicks }));
+  const click = clicks.find(([, id]) => id === 'play');
+  if (!click) throw new Error('the observer never heard the click on Play, so the cut could not be timed');
+  const v = judgeCut(L, click[0]);
+  t.diagnostic(`after Play with reduced motion: ${v.note}`);
+  assertNone(v.broken ? [v.broken] : [], 'with reduced motion Play must cut from eye to eye, from the click: ');
   noErrors(errors);
+  // Not an assertion: without a frame near the bound the check could not judge (F90).
+  if (v.unjudged) throw new Error(`with reduced motion Play's cut hold could not be judged: ${v.unjudged}`);
 });
+
+// The cut hold at hello world after `at`, the time of a click on Play or of the switch to reduced
+// motion, where the page begins it: every frame logged after it must be in mode tour exactly at
+// hello world's eye and then at the face's, and none stamped less than CUT_HOLD_MIN_MS after `at`
+// may be at the face. The page ends the 4 s cut hold in the first frame stamped 4 s after it began,
+// so a frame drawn late cannot shorten it here. A frame must be stamped in the last CUT_WINDOW_MS
+// before the bound, or a hold that ended there would pass unseen: then `unjudged` says so.
+function judgeCut(L, at) {
+  const after = L.filter((e) => e[0] > at), rs = runs(after);
+  const face = rs[1] ? rs[1].stamps[0] - at : null;
+  const near = after.filter((e) => e[5] - at >= CUT_HOLD_MIN_MS - CUT_WINDOW_MS && e[5] - at < CUT_HOLD_MIN_MS).length;
+  const note = `${show(rs)}; the first frame at the face stamped ${face === null ? '?' : `${(face / 1000).toFixed(3)} s`} after it, and ${near} frame(s) stamped ${(CUT_HOLD_MIN_MS - CUT_WINDOW_MS) / 1000}–${CUT_HOLD_MIN_MS / 1000} s after it`;
+  if (rs.map(key).join(' → ') !== 'tour hello-world → tour face') return { note, broken: `every frame after it must be in mode tour exactly at hello world's eye and then at the face's, but the log has ${show(rs)}` };
+  if (!(face >= CUT_HOLD_MIN_MS)) return { note, broken: `the first frame at the face is stamped ${face.toFixed(0)} ms after it, so the cut hold at hello world lasted less than ${CUT_HOLD_MIN_MS} ms by the page's clock` };
+  if (!near) return { note, unjudged: `no frame was stamped ${CUT_HOLD_MIN_MS - CUT_WINDOW_MS}–${CUT_HOLD_MIN_MS} ms after it, so a cut hold that ended there would pass unseen` };
+  return { note };
+}
 
 test('reduced motion switched on during a glide of Play or of capture mode cuts to its eye at once', async (t) => {
   // Play from "world" glides 4.35 s to hello world at once; capture mode holds 2 s at the start
@@ -497,7 +598,7 @@ test('reduced motion switched on during a glide of Play or of capture mode cuts 
     const { context, page, errors } = await openIn(browsers[2], url);
     try {
       if (start) await start(page);
-      await until(page, () => window.__cloud.target() === 'hello-world' && window.__cloud.alignment() > 1e-3, null, 10000, `${what} gliding toward hello world`);
+      await setup(page, () => window.__cloud.target() === 'hello-world' && window.__cloud.alignment() > 1e-3, null, 10000, `${what} gliding toward hello world`);
       await sleep(SWITCH_MS);
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await until(page, () => window.__cloud.target() === 'face', null, 8000, `${what} going on to the face after the switch`);
@@ -505,22 +606,20 @@ test('reduced motion switched on during a glide of Play or of capture mode cuts 
       return { what, L: await log(page), heard: await page.evaluate(() => window.__heard), errors };
     } finally { await context.close(); }
   }));
-  const broken = [];
+  const broken = [], unjudged = [];
   for (const { what, L, heard } of seen) {
     const on = heard.find(([, matches]) => matches);
-    if (!on) { broken.push(`${what}: the page never heard reduced motion switch on`); continue; }
-    const last = L.filter((e) => e[0] < on[0]).at(-1), rs = runs(L.filter((e) => e[0] > on[0]));
-    t.diagnostic(`${what}: the frame before the switch ${last ? `${last[1]} ${where(last[3], last[4])} [${last[2]}]` : 'none'}; after it ${show(rs)}; the hold at hello world ends ${rs[0] ? ((rs[0].t1 - on[0]) / 1000).toFixed(2) : '?'} s after the switch, its first frame ${rs[0] ? ((rs[0].t0 - on[0]) / 1000).toFixed(2) : '?'} s after it`);
-    if (!last || last[1] !== 'tour' || last[2] !== 'hello-world' || where(last[3], last[4]) !== 'moving') { broken.push(`${what}: the switch did not come in the glide toward hello world (the frame before it: ${JSON.stringify(last)}), so this check proves nothing`); continue; }
-    const pattern = rs.map(key).join(' → ');
-    if (pattern !== 'tour hello-world → tour face') broken.push(`${what}: from the first frame after the switch every frame must be in mode tour exactly at hello world's eye and then at the face's, but the log has ${show(rs)}`);
-    // The cut hold is timed from the switch, where the page begins it, not from the first frame drawn
-    // after it: under load that frame came up to 0.77 s late (2026-10-22), which is drawing delay, not
-    // a shorter hold. Every frame after the switch must still be at the eye (the pattern above).
-    else if (!(rs[0].t1 - on[0] >= CUT_HOLD_MIN_MS)) broken.push(`${what}: the cut hold at hello world lasted ${(rs[0].t1 - on[0]).toFixed(0)} ms from the switch, less than ${CUT_HOLD_MIN_MS} ms`);
+    if (!on) { unjudged.push(`${what}: the page never heard reduced motion switch on`); continue; }
+    const last = L.filter((e) => e[0] < on[0]).at(-1), v = judgeCut(L, on[0]);
+    t.diagnostic(`${what}: the frame before the switch ${last ? `${last[1]} ${where(last[3], last[4])} [${last[2]}]` : 'none'}; after it ${v.note}`);
+    if (!last || last[1] !== 'tour' || last[2] !== 'hello-world' || where(last[3], last[4]) !== 'moving') { unjudged.push(`${what}: the switch did not come in the glide toward hello world (the frame before it: ${JSON.stringify(last)})`); continue; }
+    if (v.broken) broken.push(`${what}: ${v.broken}`);
+    else if (v.unjudged) unjudged.push(`${what}: ${v.unjudged}`);
   }
-  assertNone(broken, 'reduced motion switched on mid-glide must cut to the eye at once: ');
+  assertNone(broken, 'reduced motion switched on mid-glide must cut to the eye at once, from the switch: ');
   for (const { errors } of seen) noErrors(errors);
+  // Not an assertion: a case whose setup failed says nothing of the page (F90).
+  if (unjudged.length) throw new Error(`the check could not judge ${unjudged.length} case(s): ${unjudged.join('; ')}`);
 });
 
 test('the tour at load holds at each message in sequence order and ends idle at "world"', async (t) => {
@@ -569,11 +668,15 @@ test('capture mode loops the sequence from "world" back to hello world, and Esca
   if (!broken.length && pass.next !== rs.length) broken.push(`the log has more runs before the loop's return to hello world: ${show(rs.slice(pass.next))}`);
   assertNone(broken, 'capture mode must loop the sequence: ');
   // Escape while the loop glides on to its next message (the last two frames drawn in mode tour,
-  // more than 1e-3° apart), so that a camera that runs on after it shows.
-  await until(page, () => {
-    const L = window.__log, e = L[L.length - 1], p = L[L.length - 2];
-    return !!(e && p && e[1] === 'tour' && p[1] === 'tour' && Math.hypot(e[3] - p[3], e[4] - p[4]) > 1e-3);
-  }, null, 10000, 'capture mode gliding on to its next message');
+  // more than 1e-3° apart, the last at least ESC_LEAD_DEG from the eye it heads for), so that a
+  // camera that runs on after it shows.
+  await setup(page, ({ eyes, lead }) => {
+    const L = window.__log, e = L[L.length - 1], p = L[L.length - 2], R = Math.PI / 180;
+    const dir = (az, el) => [Math.cos(el * R) * Math.sin(az * R), Math.sin(el * R), Math.cos(el * R) * Math.cos(az * R)];
+    const deg = (a, b) => { const u = dir(a[0], a[1]), w = dir(b[0], b[1]); return 2 * Math.asin(Math.min(1, Math.hypot(u[0] - w[0], u[1] - w[1], u[2] - w[2]) / 2)) / R; };
+    const m = e && eyes.find((x) => x.name === e[2]);
+    return !!(m && p && e[1] === 'tour' && p[1] === 'tour' && deg([e[3], e[4]], [m.az, m.el]) > lead && deg([e[3], e[4]], [p[3], p[4]]) > 1e-3);
+  }, { eyes: MESSAGES, lead: ESC_LEAD_DEG }, 10000, `capture mode gliding on to its next message, at least ${ESC_LEAD_DEG}° from its eye`);
   await page.evaluate(() => { window.__sameDocument = true; });   // gone if the page reloads
   await page.keyboard.press('Escape');
   await sleep(300);                                 // long enough for a reload, had Escape started one, to replace the document
@@ -592,9 +695,15 @@ test('capture mode loops the sequence from "world" back to hello world, and Esca
   assert.equal(flag, false, 'after Escape window.__cloud.capture is still true');
   assert.deepEqual(Object.entries(shown).filter(([, v]) => !v).map(([id]) => `#${id}`), [], 'after Escape the readout, the hint and both buttons must show again, but these are hidden');
   assert.equal(cur, 'grab', `after Escape the scene's cursor is "${cur}", not "grab"`);
-  assert.ok(esc && last && last[1] === 'tour' && step > 0, `Escape did not come while capture mode was gliding (the two frames before it: ${JSON.stringify([p, last])}), so the check that the camera stops at once proves nothing`);
-  const moved = after.filter((e) => e[1] !== 'idle' || !(off(e) <= 1e-6));
-  assert.ok(after.length > 0 && moved.length === 0, `from the first frame after Escape every frame must be idle where the frame before it was, but ${after.length ? `${moved.length} of ${after.length} were not: ${moved.slice(0, 3).map((e) => `${e[1]} ${off(e).toFixed(6)}°`).join(', ')}` : 'no frame came after it'}`);
+  // The setup condition: the frame before Escape is mid-glide, in mode tour, at no eye and moved
+  // since the frame before it. A hold's first frame has also just moved, onto the eye, and there a
+  // glide that runs on would not show (F91). Without it, or with no frame after the press, the check
+  // could not judge, and the test fails as an error at its end.
+  const judged = !!(esc && last && last[1] === 'tour' && where(last[3], last[4]) === 'moving' && step > 0 && after.length > 0);
+  if (judged) {
+    const moved = after.filter((e) => e[1] !== 'idle' || !(off(e) <= 1e-6));
+    assert.ok(moved.length === 0, `from the first frame after Escape every frame must be idle where the frame before it was, but ${moved.length} of ${after.length} were not: ${moved.slice(0, 3).map((e) => `${e[1]} ${off(e).toFixed(6)}°`).join(', ')}`);
+  }
   assert.equal(s2.mode, 'idle', `1.3 s after Escape the mode is "${s2.mode}"`);
   // Escape also takes the bare #capture anchor out of the address, so adding it back, as a viewer
   // would in the address bar, starts capture mode again.
@@ -612,33 +721,34 @@ test('capture mode loops the sequence from "world" back to hello world, and Esca
   t.diagnostic(`the second Escape: ${JSON.stringify(out)}`);
   assert.deepEqual(out, { capture: false, mode: 'idle', address: PAGE_URL }, 'a second Escape must end capture mode again and take the anchor out of the address again');
   noErrors(capture.errors);
+  // Not an assertion (F90, F91).
+  if (!judged) throw new Error(`Escape did not come while capture mode was gliding between eyes (the two frames before it: ${JSON.stringify([p, last])}; ${after.length} frames after it), so the check that the camera stops at once could not judge`);
 });
 
-test('capture mode at each of its six holds, the tour at load at the face and idle where it ends, Play after it, and "Find the angle" at each later eye render as that eye set by URL, pixel for pixel', async (t) => {
+test('capture mode at each of its six holds, the tour at load at the face, idle where it ends and at "Find the angle" landings after it, Play after them, and "Find the angle" at each later eye render as that eye set by URL, pixel for pixel', async (t) => {
   const [held, tour, refs, found] = await pictures;
   const broken = [], missed = [];
   for (const m of MESSAGES) for (const s of refs.eyes[m.name].at) if (!(angleDeg(s, m) <= 1e-6)) broken.push(`msg=${m.name} set the camera ${angleDeg(s, m).toFixed(4)}° from its eye, so it is no reference`);
-  const sets = [['capture mode', held, true], ['the tour at load', tour.face, false], ['the tour at load, idle where it ends,', tour.end, false], ['Play, clicked where the tour ended,', tour.play, false], ['"Find the angle"', found, false]];
+  const sets = [['capture mode', held, true], ['the tour at load', tour.face, false], ['the tour at load, idle where it ends,', tour.end, false], ['"Find the angle" after the tour at load,', tour.find, false], ['Play, clicked where those landings ended,', tour.play, false], ['"Find the angle" from the eye before', found, false]];
   for (const [what, set, inCapture] of sets) {
     for (const h of set.shots) {
       const m = MESSAGES[NAMES.indexOf(h.name)], r = refs.eyes[h.name];
       const at = (s) => s.mode === h.mode && s.target === h.name && angleDeg(s, m) <= 1e-6 && s.capture === inCapture;
       const label = `${what} at "${h.name}"${h.when ? ` ${h.when}` : ''}`, rest = h.mode === 'tour' ? 'into the hold' : 'after the camera came to rest';
-      const ok = at(h.s0) && at(h.s1), late = h.s1.now - h.from;
-      const timing = `shot ${ms(h.into)} ${rest}, ${ms(h.s1.now - h.s0.now)} for the shot and its reads${h.mode === 'tour' ? `, ending ${ms(HOLD_MS - late)} before the hold's ${HOLD_MS / 1000} s end` : ''}`;
-      // A hold shot whose second read came after the hold's end, with the camera gone, outran the
-      // hold: a timing miss, which says nothing of the page, so its picture is not compared.
-      if (!ok && h.mode === 'tour' && late > HOLD_MS) { missed.push(`${label}: ${timing}; before ${JSON.stringify(h.s0)}, after ${JSON.stringify(h.s1)}`); t.diagnostic(`${label}: MISSED, ${timing}`); continue; }
+      // A missed hold says nothing of the page, so its picture is not compared (see shootAt).
+      if (h.missed) { missed.push(`${label}: ${h.missed}${h.retried ? `; on the pass before: ${h.retried}` : ''}`); t.diagnostic(`${label}: MISSED: ${h.missed}`); continue; }
+      const ok = at(h.s0) && at(h.s1), late = h.s1.now - h.stamp;
+      const timing = `shot ${ms(h.into)} ${rest}, ${ms(h.s1.now - h.s0.now)} for the shot and its reads${h.mode === 'tour' ? `, ending ${ms(HOLD_MS - late)} before the hold's ${HOLD_MS / 1000} s end, by the stamp of its first frame` : ''}${h.retried ? `; shot on the loop's next pass, after a miss: ${h.retried}` : ''}`;
       const d = partsResidual(h.img, r.sky, [r.ref]);
-      t.diagnostic(`${label}: ${timing}; central residual r/g/b ${rgb(d.abs)} (signed ${rgb(d.signed)}; ${(100 * d.off).toFixed(3)}% of pixels off by more than 2 levels)`);
+      t.diagnostic(`${label}: ${timing}; central residual r/g/b ${rgb(d.abs)} (signed ${rgb(d.signed)}; ${d.differ} of ${d.values} channel values differ; ${(100 * d.off).toFixed(3)}% of pixels off by more than 2 levels)`);
       if (!ok) broken.push(`${label}: the page did not report the camera at rest at "${h.name}" in mode ${h.mode}${inCapture ? ' in capture mode' : ''} before and after the shot: before ${JSON.stringify(h.s0)}, after ${JSON.stringify(h.s1)}`);
       if (!(h.into >= h.lead)) broken.push(`${label}: the shot started ${ms(h.into)} ${rest}, where at least ${h.lead} ms is needed`);
       if (!d.abs.every((x) => x <= MAX_RESIDUAL)) broken.push(`${label}: the central region differs from msg=${h.name} set by URL by ${rgb(d.abs)} of its light in red/green/blue (signed ${rgb(d.signed)}; ${(100 * d.off).toFixed(3)}% of pixels off by more than 2 levels); each must be at most ${MAX_RESIDUAL}`);
     }
   }
-  assertNone(broken, `the sequence, the tour's end and "Find the angle" must not change how an eye renders while the camera rests there${missed.length ? ` (besides, ${missed.length} hold shot(s) outran their holds)` : ''}: `);
-  // Not an assertion: a shot that outran its hold is the test failing to judge, so a mutation run
+  assertNone(broken, `the sequence, the tour's end and "Find the angle" must not change how an eye renders while the camera rests there${missed.length ? ` (besides, ${missed.length} hold shot(s) missed their holds)` : ''}: `);
+  // Not an assertion: a shot that missed its hold is the test failing to judge, so a mutation run
   // counts it as an error, never as a mutant's kill.
-  if (missed.length) throw new Error(`${missed.length} hold shot(s) outran their holds, a timing miss, not a page defect, so those pictures were not judged: ${missed.join('; ')}`);
+  if (missed.length) throw new Error(`${missed.length} hold shot(s) missed their holds, a timing miss, not a page defect, so those pictures were not judged: ${missed.join('; ')}`);
   noErrors([...held.errors, ...tour.face.errors, ...refs.errors, ...found.errors]);
 });

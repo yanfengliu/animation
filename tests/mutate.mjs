@@ -285,9 +285,11 @@ const PAGE_MUTANTS = [
   { name: 'reduced-switch-coasts-on', defect: 'reduced motion switched on during a coast lets the coast run on (F81)',
     edits: [["  if (mode === 'inertia') { settle(); return; }\n", '']] },
   // The sequence file's switch test now times the cut hold from the switch, not from the first frame
-  // after it; this keeps that bound proven.
-  { name: 'reduced-switch-short-hold', defect: 'the cut hold that reduced motion switched on mid-glide begins lasts 3 s, not 4 s',
-    edits: [['    anim = null;\n    nextStep();\n  }\n});', '    anim = null;\n    nextStep();\n    if (anim && !anim.target) anim.ms = 3000;\n  }\n});']] },
+  // after it; this keeps that bound proven. Its hold is 2 s, so every frame the page stamps from
+  // 2 s after the switch shows the face, and the check's last 1 s before its 3.5 s bound, where a
+  // frame must fall for the check to judge, lies wholly past this hold's end (F92).
+  { name: 'reduced-switch-short-hold', defect: 'the cut hold that reduced motion switched on mid-glide begins lasts 2 s, not 4 s',
+    edits: [['    anim = null;\n    nextStep();\n  }\n});', '    anim = null;\n    nextStep();\n    if (anim && !anim.target) anim.ms = 2000;\n  }\n});']] },
   // F86: one mutant for each sequence check that had none.
   { name: 'hold-names-next-early', defect: 'each hold of the sequence names the next message for its last 250 ms, though the camera is still at the eye, past the 100 ms that NEXT_MAX_MS allows (F86)',
     edits: [["const k = heading >= 0 && (mode === 'tour' || mode === 'glide' || mode === 'snap') ? heading : atMessage();", "const k = heading >= 0 && (mode === 'tour' || mode === 'glide' || mode === 'snap') ? (mode === 'tour' && anim && !anim.target && performance.now() - anim.t0 > anim.ms - 250 ? (heading + 1) % M.length : heading) : atMessage();"]] },
@@ -315,6 +317,18 @@ const PAGE_MUTANTS = [
   // (0.924 against 0.85).
   { name: 'scene-dims-near-what', defect: 'every particle dims near the eye of "What", down to 0.9× there and back to full light 12° out, so the whole cloud darkens as the camera nears it (F86)',
     edits: [NEAR_UNIFORM, nearSet(nearMessage(2)), [PARTICLE_COLOUR, 'v_col = u_pal[code & 3] * (level * tw * fade * energy * (1.0 - 0.1 * u_near));']] },
+  // Repair round 3 (R3).
+  // Before R3 every "Find the angle" landing was pictured on a page with tour=0, where autoplayed
+  // stays false, so this passed every gate; the tour picture page now clicks "Find the angle"
+  // through all six eyes after the tour ends (F88).
+  { name: 'reveal-after-tour-find', defect: 'once the tour at load has played and "Find the angle" has landed, text particles brighten 1.25× wherever the camera is at an eye (a reveal for a visitor who watches the tour and then clicks "Find the angle", which pages with tour=0 do not show; F88)',
+    edits: [TEXT_DECL, NEAR_UNIFORM, nearSet('autoplayed && found && atMessage() >= 0 ? 1 : 0'), TEXT_BRIGHTER, ...FOUND] },
+  // The second sky draw covers the first frame's picture, so the screen is the same and the image
+  // gates, which draw at DPR 1, cannot see it. Before R3 the budget probe ended its sample at the
+  // next draw that was not of points, the second sky, and so measured the first particle draw only:
+  // 48,000 particles and the usual fill (F89).
+  { name: 'draws-twice-a-frame', defect: 'at DPR 2 each animation frame draws the sky and the particles twice, so the GPU fills twice the sprites for the same picture (F89)',
+    edits: [['  stepCamera(now, dt);\n  draw();\n', '  stepCamera(now, dt);\n  draw();\n  if (dpr() >= 2) draw();\n']] },
 ];
 
 // The hygiene gate scans text, including this file, so the defects below are assembled from

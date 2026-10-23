@@ -17,15 +17,16 @@
 // description and a name that says what it shows and how to steer; the page draws at most PARTICLES
 // particles, all that it reports, and at 1920×1080 and DPR 2 its sprites cover at most MAX_OVERDRAW×
 // the screen's pixels at the start view and at each of the six eyes (default zoom, t 0), read from
-// the point sizes the GPU itself computes (transform feedback) at each drawArrays point draw, with
-// the state that draw has (F77); without WebGL2 a message shows
+// the point sizes the GPU itself computes (transform feedback) at each drawArrays point draw of one
+// animation frame, with the state that draw has (F77, F89); without WebGL2 a message shows
 // and the page never reports ready. Each page's context is closed as soon as its check is done.
 // The timing check never runs beside the illusion file's renders or the sequence file's pages:
 // npm test and tests/mutate.mjs run each of those first, in a phase of its own (tests/lib/phases.mjs).
 // Does not prove other browsers, real GPUs or the frame rate they reach (the particle and fill
 // budget stands in for it: a real GPU may cap point sizes lower, and shading costs differ), the fill
 // at other zooms (about 13.6× the screen at the closest zoom at E) or views, or of points drawn
-// other than with drawArrays (drawElements or instanced draws are not measured), DM Mono's own widths
+// other than with drawArrays (drawElements or instanced draws are not measured) or by a page that
+// does not draw from requestAnimationFrame callbacks, DM Mono's own widths
 // (its file is not available offline; the stand-in assumes 0.600 em), fonts loading over a real
 // network, or how a screen
 // reader behaves with the canvas (none is available here; the role is what tells NVDA and JAWS
@@ -155,17 +156,28 @@ const MAX_OVERDRAW = 3;          // sprite fragments per frame over the screen's
 // Reads the point sizes the GPU computes, through transform feedback. Before the page's scripts run
 // it adds gl_Position and gl_PointSize as transform-feedback outputs of the programs that set
 // gl_PointSize and skips every draw the page makes, so the page keeps setting its state each frame
-// but costs nothing at 3840×2160. measure() marks the next frame (a frame starts with the sky's
-// draw, the first that is not of points). Each drawArrays point draw of that frame made with such a
-// program is measured where the page makes it, with the rasterizer off and the program, vertex array
-// and uniforms the draw has then. So a draw that raises a sizing uniform and restores it after is
-// measured at the size it draws; replaying the frame's draws later measured it with the restored
-// value (review round 1, F77). Each sprite's square is summed, clipped to the screen.
+// but costs nothing at 3840×2160. It also wraps requestAnimationFrame: measure() arms the probe,
+// and the sample is the next animation frame, from the first callback the browser runs for it to
+// the first callback of the frame after it (a later timestamp), so it holds every draw made in any
+// callback of that frame and in any task before the next one. Before R3 a frame ended at the next
+// draw that was not of points, so a frame that drew the sky and the particles twice was measured
+// for its first particle draw only (review round 2, F89). Each drawArrays point draw in the sample
+// made with such a program is measured where the page makes it, with the rasterizer off and the
+// program, vertex array and uniforms the draw has then. So a draw that raises a sizing uniform and
+// restores it after is measured at the size it draws; replaying the frame's draws later measured
+// it with the restored value (review round 1, F77). Each sprite's square is summed, clipped to the
+// screen.
 const FILL_PROBE = () => {
   const G = WebGL2RenderingContext.prototype;
   const { shaderSource, attachShader, linkProgram, drawArrays, useProgram } = G;
   const sizedShaders = new WeakSet(), sized = new WeakSet();
-  const s = window.__fill = { used: null, armed: false, frame: null, done: null };
+  const s = window.__fill = { used: null, armed: false, stamp: null, frame: null, done: null };
+  const raf = window.requestAnimationFrame.bind(window);
+  window.requestAnimationFrame = (cb) => raf((ts) => {
+    if (s.frame && ts !== s.stamp) { s.done = s.frame; s.frame = null; }   // the next frame: the sample is complete
+    if (s.armed) { s.armed = false; s.stamp = ts; s.frame = []; }
+    return cb(ts);
+  });
   G.shaderSource = function (sh, src) { if (/gl_PointSize/.test(src)) sizedShaders.add(sh); return shaderSource.call(this, sh, src); };
   G.attachShader = function (p, sh) { if (sizedShaders.has(sh)) sized.add(p); return attachShader.call(this, p, sh); };
   G.linkProgram = function (p) { if (sized.has(p)) this.transformFeedbackVaryings(p, ['gl_Position', 'gl_PointSize'], this.INTERLEAVED_ATTRIBS); return linkProgram.call(this, p); };
@@ -204,21 +216,16 @@ const FILL_PROBE = () => {
     return { count, W, H, fill, sum, largest };
   };
   G.drawArrays = function (mode, first, count) {
-    if (mode !== this.POINTS) {
-      if (s.frame) { s.done = s.frame; s.frame = null; }
-      if (s.armed) { s.armed = false; s.frame = []; }
-      return;
-    }
-    if (s.frame && sized.has(s.used)) s.frame.push(measureDraw(this, first, count));
+    if (mode === this.POINTS && s.frame && sized.has(s.used)) s.frame.push(measureDraw(this, first, count));
   };
   s.measure = async () => {
     s.done = null; s.frame = null; s.armed = true;
     for (const end = performance.now() + 10000; !s.done;) {
-      if (performance.now() > end) throw new Error('no frame was measured within 10 s of asking: the probe needs the page to draw a frame that starts with a draw not of points (the sky) and to start the next one the same way');
+      if (performance.now() > end) throw new Error('no animation frame was measured within 10 s of asking: the probe needs the page to draw from requestAnimationFrame callbacks, and to run a callback in the frame after the one it measures');
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
     const draws = s.done;
-    if (!draws.length) throw new Error('the measured frame had no drawArrays point draw with a program that sets gl_PointSize, so there is no sprite fill to read');
+    if (!draws.length) throw new Error('the measured animation frame had no drawArrays point draw with a program that sets gl_PointSize, so there is no sprite fill to read');
     const { W, H } = draws[0];
     if (draws.some((d) => d.W !== W || d.H !== H)) throw new Error(`the measured frame's point draws went to drawing buffers of different sizes (${draws.map((d) => `${d.W}×${d.H}`).join(', ')}), so their fills cannot be added on one screen`);
     const largest = Math.max(...draws.map((d) => d.largest));

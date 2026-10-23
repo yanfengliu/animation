@@ -5,28 +5,35 @@
 // requestAnimationFrame, passes every frame through unchanged and records mode() and view() after
 // each one. The observer also records when the page can first hear a change of the reduced-motion
 // preference: its listener is created before the page's own, so it hears each change first, in the
-// same task. Proves: the tour moves the camera at load, stops on a press and stays stopped for the
-// 9 s measured; a fling coasts; with reduced motion there is no tour, no coast in the same page once
-// reduced motion is switched on, and "Find the angle" jumps; and reduced motion switched on during
-// a "Find the angle" glide (from the start view to hello world's eye), a snap (an arrow key 1.9°
-// from that eye) or a coast (a fling at az 0, el 0) stops it at once: from the first frame after the
-// page hears the change, every frame is idle, at that eye for the glide and the snap, and where the
-// frame before the change was for the coast, whose stop is far from any eye. The frame before the
-// change must be in that move, or the check fails. A fling's release must land within the page's 60 ms window, so this file never runs
+// same task. Each frame is logged with its own stamp, the timestamp the page's frame callback gets
+// and times its moves by. Proves: the tour moves the camera at load, stops on a press and stays
+// stopped for the 9 s measured; a fling coasts; with reduced motion there is no tour, no coast in the
+// same page once reduced motion is switched on, and "Find the angle" jumps; and reduced motion
+// switched on during a "Find the angle" glide (from the start view to hello world's eye), a snap (an
+// arrow key 1.9° from that eye) or a coast (a fling at az 0, el 0) stops it at once: every frame
+// after the page hears the change and stamped within IDLE_WINDOW_MS of it is idle, at that eye for
+// the glide and the snap, and where the frame before the change was for the coast, whose stop is far
+// from any eye. The frame before the change must be in that move, and at least MIN_FRAMES frames
+// must fall in the window; otherwise the test fails as an error, not a check, since it could not
+// judge (review round 2, F90). A fling's release must land within the page's 60 ms window, so this file never runs
 // beside the illusion file's renders or the sequence file's pages: npm test and tests/mutate.mjs
 // run each of those first, in a phase of its own (tests/lib/phases.mjs).
 // Does not prove how the motion feels (easing, inertia), other browsers or devices, behaviour
-// under slow frame rates, or reduced motion switched on during a drag, a pinch or a zoom.
+// under slow frame rates, reduced motion switched on during a drag, a pinch or a zoom, or a move
+// that resumes later than IDLE_WINDOW_MS after the change.
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startBrowser, openPage, waitFrames, state, until, sleep } from './lib/harness.mjs';
+import { startBrowser, openPage, waitFrames, state, until, setup, sleep } from './lib/harness.mjs';
 import { MESSAGES, angleDeg } from './lib/messages.mjs';
 
 const SMALL = { width: 640, height: 400 };
 const C = { x: 320, y: 200 };                        // canvas centre, clear of the UI
+const IDLE_WINDOW_MS = 1000;                         // after reduced motion switches on mid-move, every frame stamped within this is read: a glide has about 2 s left, a snap about 0.8 s and a coast about 1 s
+const MIN_FRAMES = 3;                                // frames that must fall in that window for the check to judge
 
-// Records, after each animation frame, [time, mode, az, el] as the page reports them, and, for each
-// change of the reduced-motion preference, [time, matches] as the page can first hear it.
+// Records, after each animation frame, [time, mode, az, el, stamp] as the page reports them (stamp:
+// the frame's own timestamp, which the page's frame callback gets), and, for each change of the
+// reduced-motion preference, [time, matches] as the page can first hear it.
 const OBSERVER = () => {
   const raf = window.requestAnimationFrame.bind(window);
   window.__log = [];
@@ -35,7 +42,7 @@ const OBSERVER = () => {
   window.requestAnimationFrame = (cb) => raf((ts) => {
     cb(ts);
     const c = window.__cloud;
-    if (c && c.ready) { const v = c.view(); window.__log.push([performance.now(), c.mode(), v.az, v.el]); }
+    if (c && c.ready) { const v = c.view(); window.__log.push([performance.now(), c.mode(), v.az, v.el, ts]); }
   });
 };
 
@@ -118,40 +125,46 @@ test('reduced motion switched on during a "Find the angle" glide, a snap or a co
   const cases = [
     ['a "Find the angle" glide', 'tour=0', 'glide', async (page) => {
       await page.click('#find');
-      await until(page, () => window.__cloud.mode() === 'glide' && window.__cloud.alignment() < 41, null, 3000, 'the glide from the start view toward hello world under way');
+      await setup(page, () => window.__cloud.mode() === 'glide' && window.__cloud.alignment() < 41, null, 3000, 'the glide from the start view toward hello world under way');
     }, MESSAGES[0]],
     ['a snap', 'az=42&el=14&tour=0', 'snap', async (page) => {
       await page.keyboard.press('ArrowLeft');                  // az 40: 1.9° from hello world's eye, closer than before
-      await until(page, lastIs, 'snap', 2000, 'the snap to hello world under way');
+      await setup(page, lastIs, 'snap', 2000, 'the snap to hello world under way');
     }, MESSAGES[0]],
     ['a coast', 'az=0&el=0&tour=0', 'inertia', async (page) => {
       await page.mouse.move(C.x - 150, C.y);
       await page.mouse.down();
       for (let i = 1; i <= 6; i++) { await page.mouse.move(C.x - 150 + i * 40, C.y); await sleep(10); }
       await page.mouse.up();
-      await until(page, lastIs, 'inertia', 2000, 'the fling coasting');
+      await setup(page, lastIs, 'inertia', 2000, 'the fling coasting');
     }, null],
   ];
-  const broken = [];
+  const broken = [], unjudged = [];
   for (const [what, query, mode, start, eye] of cases) {
     // One page at a time, closed before the next, so the fling's release is timed as in the coast test.
     const { context, page } = await openPage(browser, { query, ...SMALL, initScript: OBSERVER });
     try {
       await start(page);
       await page.emulateMedia({ reducedMotion: 'reduce' });
-      await sleep(300);
+      // Every frame the page stamps within IDLE_WINDOW_MS of the change is read, so the log must
+      // reach past the window first.
+      await setup(page, (w) => { const on = window.__heard.find(([, m]) => m); return !!on && window.__log.some((e) => e[0] > on[0] && e[4] - on[0] >= w); }, IDLE_WINDOW_MS, IDLE_WINDOW_MS + 5000, `${what}: frames stamped ${IDLE_WINDOW_MS} ms after reduced motion switched on`);
       const { L, heard } = await page.evaluate(() => ({ L: window.__log, heard: window.__heard }));
       const on = heard.find(([, matches]) => matches);
-      if (!on) { broken.push(`${what}: the page never heard reduced motion switch on`); continue; }
-      const last = L.filter((e) => e[0] < on[0]).at(-1), after = L.filter((e) => e[0] > on[0]);
+      const last = L.filter((e) => e[0] < on[0]).at(-1), after = L.filter((e) => e[0] > on[0] && e[4] - on[0] < IDLE_WINDOW_MS);
       const to = eye ?? (last && { az: last[2], el: last[3] }), off = (e) => angleDeg({ az: e[2], el: e[3] }, to);
       const shown = after.slice(0, 3).map((e) => `${e[1]} ${off(e).toFixed(6)}°`).join(', ');
-      t.diagnostic(`${what}: the frame before the switch ${last ? `${last[1]}, ${off(last).toFixed(4)}° from ${eye ? eye.name + "'s eye" : 'itself'}` : 'none'}; ${after.length} frames after it: ${shown}${after.length > 3 ? ', …' : ''}`);
-      if (!last || last[1] !== mode || (eye && !(off(last) > 1e-6))) { broken.push(`${what}: the switch did not come during the move (the frame before it: ${JSON.stringify(last)}), so this check proves nothing`); continue; }
-      if (after.length < 3) broken.push(`${what}: only ${after.length} frames came in the 0.3 s after the switch`);
+      t.diagnostic(`${what}: the frame before the switch ${last ? `${last[1]}, ${off(last).toFixed(4)}° from ${eye ? eye.name + "'s eye" : 'itself'}` : 'none'}; ${after.length} frames stamped in the ${IDLE_WINDOW_MS} ms after it: ${shown}${after.length > 3 ? ', …' : ''}`);
+      // The setup conditions: the move under way when the page heard the change, and frames enough
+      // to read. Missing either says the test could not judge, not that the page broke the rule.
+      if (!last || last[1] !== mode || (eye && !(off(last) > 1e-6))) { unjudged.push(`${what}: the switch did not come during the move (the frame before it: ${JSON.stringify(last)})`); continue; }
+      if (after.length < MIN_FRAMES) { unjudged.push(`${what}: only ${after.length} frames were stamped in the ${IDLE_WINDOW_MS} ms after the switch, fewer than ${MIN_FRAMES}`); continue; }
       const moving = after.filter((e) => e[1] !== 'idle' || !(off(e) <= 1e-6));
       if (moving.length) broken.push(`${what}: from the first frame after the switch every frame must be idle ${eye ? `exactly at ${eye.name}'s eye` : 'where the frame before the switch was'}, but ${moving.length} of ${after.length} were not: ${moving.slice(0, 3).map((e) => `${e[1]} ${off(e).toFixed(6)}°`).join(', ')}`);
     } finally { await context.close(); }
   }
   assert.ok(broken.length === 0, 'reduced motion switched on mid-move must stop the move at once: ' + broken.join('; '));
+  // Not an assertion: a case that could not be set up says nothing of the page, so a mutation run
+  // counts it as an error, never as a mutant's kill (review round 2, F90).
+  if (unjudged.length) throw new Error(`the check could not judge ${unjudged.length} case(s): ${unjudged.join('; ')}`);
 });

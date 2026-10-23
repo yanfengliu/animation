@@ -268,13 +268,15 @@ export function crop(img, { x, y, width, height }) {
 // is false); with one part it is that render itself. Per channel (r, g, b) it returns the absolute
 // residual Σ|img − prediction| and the signed residual Σ(img − prediction), each over the
 // predicted light Σ(prediction − base), and the share of pixels off by more than `tol` levels in
-// some channel. With `region` ([x0, x1, y0, y1] as fractions) only the pixels inside it count.
+// some channel. It also counts exactly the channel values that differ from the prediction at all
+// (`differ`) out of those compared (`values`), since the residuals print to only four decimals.
+// With `region` ([x0, x1, y0, y1] as fractions) only the pixels inside it count.
 export function partsResidual(img, base, parts, { region = [0, 1, 0, 1], tol = 2, clip = true } = {}) {
   const W = img.width, H = img.height, n = parts.length, a = img.rgb, b = base.rgb, ps = parts.map((p) => p.rgb);
   for (const p of [base, ...parts]) if (p.width !== W || p.height !== H) throw new Error(`partsResidual: images differ in size (${p.width}×${p.height} against ${W}×${H})`);
   const [x0, x1, y0, y1] = [Math.round(region[0] * W), Math.round(region[1] * W), Math.round(region[2] * H), Math.round(region[3] * H)];
   const abs = [0, 0, 0], signed = [0, 0, 0], light = [0, 0, 0];
-  let off = 0, pixels = 0;
+  let off = 0, pixels = 0, differ = 0;
   for (let y = y0; y < y1; y++) for (let o = (y * W + x0) * 3, end = (y * W + x1) * 3; o < end; o += 3) {
     let bad = false;
     for (let c = 0; c < 3; c++) {
@@ -283,11 +285,12 @@ export function partsResidual(img, base, parts, { region = [0, 1, 0, 1], tol = 2
       if (clip && e > 255) e = 255;
       const d = a[o + c] - e;
       abs[c] += Math.abs(d); signed[c] += d; light[c] += e - b[o + c];
+      if (d !== 0) differ++;
       if (d > tol || d < -tol) bad = true;
     }
     off += bad; pixels++;
   }
-  return { abs: abs.map((x, c) => x / light[c]), signed: signed.map((x, c) => x / light[c]), off: off / pixels, light };
+  return { abs: abs.map((x, c) => x / light[c]), signed: signed.map((x, c) => x / light[c]), off: off / pixels, light, differ, values: pixels * 3 };
 }
 
 // Streak residual of `lum` against `lum0`, a render of the same view without relocation: the rms

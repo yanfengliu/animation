@@ -54,7 +54,8 @@
 //   (a real click and the glide), shot on arrival and again after 8 s idle there, and E held by the
 //   tour at load started from the shipped start view, shot at least 1.5 s into its 3 s hold at E
 //   (about 1.5–1.6 s measured), 6.6 s or more after its first frame, render the central region as E set by URL does,
-//   pixel by pixel and channel by channel (residual at most 0.1%; exactly 0 measured);
+//   pixel by pixel and channel by channel (residual at most 0.1%; each shot's diagnostic counts the
+//   channel values that differ);
 // - relocation leaves no streaks midway from hello world to its neighbours or at its back view: the
 //   row and column residual of a render minus its beta-0 twin stays within STREAK_K× each seed's
 //   floor, the mean residual at two far control views (seeds 1–3), and the floor stays below
@@ -65,8 +66,9 @@
 // Re-measure, do not retune: every bound sits between the real page and its mutants as measured for
 // the seeds its check reads (seed 1, or the mean over seeds 1–3), and the page also passes it for
 // seeds 4–12 (values beside each threshold; "in threes" means the mean over seeds 4–6, 7–9 and
-// 10–12, as redraws would give), except MIN_TIME_IOU, MIN_SCALE_IOU and the two smear bounds, which
-// were measured for seed 1 only. A change that redraws the cloud without
+// 10–12, as redraws would give), except these, which were measured for seed 1 only: MIN_TIME_IOU,
+// MIN_SCALE_IOU and the two smear bounds; MIN_RATIO and MIN_LIFT at hello world's views at t 7.3 and
+// 31 s and at fov 32 and 80; and MAX_RESIDUAL for the camera-mode shots. A change that redraws the cloud without
 // changing the design (one more rand() call in buildCloud, another N_TOTAL, a glyph tweak, another
 // eye) moves every one of them. If a bound turns red after such a redraw, re-measure seeds 1–3 and
 // the spread over further seeds (tmp-only scripts, as W11 and W17 did) and record what moved before
@@ -120,7 +122,7 @@ const MAX_CLIPPED = 0.08;        // share of an image's lit pixels that the colo
 const OWN_BETA = 0.2;            // each message's own particles at its eye are compared at this beta: their strokes are sparse enough that few pixels clip (≤ 3.1% for hello world, ≤ 19% for "a", seeds 1–6), where at the default β ¼ to ⅓ of their lit pixels clip and the ratio falls to 0.85
 const OWN_LIGHT_BAND = [0.95, 1.12]; // a message's own text particles at its eye over the same particles drawn as ambient, at OWN_BETA: 1.006–1.065 real (six messages, seeds 1–12; 1.009–1.057 for seeds 1–6), above 1 because the as-ambient image is the dense cloud's difference and loses more to the 8-bit cap; 1.253 at the eye of "a" when only its particles brighten 1.25× near it, whose whole text layer there reads 0.991, and 0.875 when they dim to 0.85× (0.981); for seed 1 it passes one message's particles 6.1% ("beautiful") to 10.1% ("a") brighter and 6.8% (hello world) to 10.0% ("beautiful") dimmer; 1.164 for "world" at half its depth spread, which brings its particles into focus, and 1.12–1.25 for the later five at a third of theirs. Changes that keep every particle alike move it too: 1.125–1.166 with every sprite 1.25× wider, 1.046–1.100 with a palette 20% brighter at every angle
 const SIZE_BAND = [0.85, 1.15];  // text / as-ambient effective sprite area at SPARSE_BETA: 0.943–1.044 real (seeds 1–12, every alike view); 1.425 at E with text sprites 1.25× wider near E
-const MAX_RESIDUAL = 0.001;      // per channel, Σ|render − prediction| over the predicted light, for the shipped render against text layer + ambient layer − sky, and for each camera-mode shot against E set by URL: at most 1.3e-5 real for the shipped render (seeds 1–12, every alike view and time: 7–623 of a frame's 3,072,000 channel values off, by 1 level but for 31 values in all, under the hint's text, which is composited over the canvas) and exactly 0 in every mode shot; worst channel 0.070 at E with a 30% gold tint near E in the shipped draw only and 0.124 with a second text pass there; in the mode shots 0.144 with text 1.25× brighter during the tour, late in its hold, after a glide or after 5 s idle at E, and 0.076 with a gold tint after a glide
+const MAX_RESIDUAL = 0.001;      // per channel, Σ|render − prediction| over the predicted light, for the shipped render against text layer + ambient layer − sky, and for each camera-mode shot against E set by URL: at most 1.3e-5 real for the shipped render (seeds 1–12, every alike view and time: 7–623 of a frame's 3,072,000 channel values differ, 44,879 in all, each by 1 level, anywhere from row 35 to row 792, but for 31 values in rows 756–769, under the hint's text, which the browser lays over the canvas) and, in each mode shot, as many channel values as its diagnostic counts; worst channel 0.070 at E with a 30% gold tint near E in the shipped draw only and 0.124 with a second text pass there; in the mode shots 0.144 with text 1.25× brighter during the tour, late in its hold, after a glide or after 5 s idle at E, and 0.076 with a gold tint after a glide
 const SCENE_BAND = [0.85, 1.15]; // scene particle light at E, 3°, 12° and each other eye over its mean at the far views: 0.926–1.104 real (seeds 1–12, t 0; 0.922–1.112 with t 7.3); 1.265 at E with every particle 1.4× brighter near E, but 1.104 with 1.2× and 1.063 with 1.15×, which pass
 // The scene's particle light changes slowly from view to view, 0.92–1.11× the far views' mean at the
 // alike views (seeds 1–12), which keeps SCENE_BAND wide. The two midpoints beside an eye, about 29°
@@ -517,7 +519,8 @@ async function ownBothWays(m) {
 // target with no depth buffer and computes depth of field per sprite, so each fragment adds the
 // same rounded amount whatever lies under it. So pixel by pixel and channel by channel the
 // shipped render minus the sky is the text layer minus the sky plus the ambient layer minus the
-// sky, capped at 255 as the target caps it (exactly, as measured). Any effect in the shipped draw
+// sky, capped at 255 as the target caps it (to within one level in at most a few hundred channel
+// values a frame, as measured; see MAX_RESIDUAL). Any effect in the shipped draw
 // that the test-only draws lack, in light, colour, size or focus, breaks that identity. Returns
 // the shipped render's particle light over the sky and the identity's residual (partsResidual).
 async function shipped(w, time) {
@@ -549,7 +552,7 @@ test('every particle renders alike at every angle: no reveal near any eye', asyn
     const beside = [MIDS[(k + MESSAGES.length - 1) % MESSAGES.length], MIDS[k]];
     ring.push({ name: `"${m.name}" at its eye`, scene: (await sceneAt(m)) / mean(await Promise.all(beside.map(sceneAt))) });
   }
-  for (const r of rows) t.diagnostic(`${r.name}: text/as-ambient light ${r.light.toFixed(3)}, colour balance r/g/b ${rgb(r.channels)} (clipped pixels left out: ${(100 * r.clipped[0]).toFixed(1)}% of the text layer's, holding ${(100 * r.clippedLight[0]).toFixed(1)}% of its light, and ${(100 * r.clipped[1]).toFixed(1)}% of the as-ambient's, holding ${(100 * r.clippedLight[1]).toFixed(1)}%)${r.size === undefined ? '' : `, sprite size ratio (beta ${SPARSE_BETA}) ${r.size.toFixed(3)}`}, shipped − (text + ambient − sky) residual r/g/b ${rgb(r.identity.abs)} (signed ${rgb(r.identity.signed)}, ${(100 * r.identity.off).toFixed(3)}% of pixels off by more than 2 levels), scene light / far mean ${r.scene.toFixed(3)}`);
+  for (const r of rows) t.diagnostic(`${r.name}: text/as-ambient light ${r.light.toFixed(3)}, colour balance r/g/b ${rgb(r.channels)} (clipped pixels left out: ${(100 * r.clipped[0]).toFixed(1)}% of the text layer's, holding ${(100 * r.clippedLight[0]).toFixed(1)}% of its light, and ${(100 * r.clipped[1]).toFixed(1)}% of the as-ambient's, holding ${(100 * r.clippedLight[1]).toFixed(1)}%)${r.size === undefined ? '' : `, sprite size ratio (beta ${SPARSE_BETA}) ${r.size.toFixed(3)}`}, shipped − (text + ambient − sky) residual r/g/b ${rgb(r.identity.abs)} (signed ${rgb(r.identity.signed)}, ${r.identity.differ} of ${r.identity.values} channel values differ, ${(100 * r.identity.off).toFixed(3)}% of pixels off by more than 2 levels), scene light / far mean ${r.scene.toFixed(3)}`);
   t.diagnostic(`each message's own particles at its eye, text/as-ambient light at beta ${OWN_BETA}: ${own.map((r) => `${r.name} ${r.light.toFixed(3)}`).join(', ')}`);
   t.diagnostic(`scene light at each eye over its mean at the two midpoints beside it (t 0): ${ring.map((r) => `${r.name} ${r.scene.toFixed(4)}`).join(', ')}`);
   // Every broken bound is named in one message, so a failure shows each way the particles differ.
@@ -712,7 +715,7 @@ test('E reached by "Find the angle", then idle there, or held by the tour render
     ].map(([name, img, ref, against]) => ({ name, against, d: partsResidual(img, sky, [ref]) }));
     const show = (s) => `${s.mode}, ${s.align.toFixed(6)}° from E`;
     t.diagnostic(`glide: on arrival ${show(g.arrived.s)}; after ${idle} ${show(g.dwell.s0)} → ${show(g.dwell.s)}. Tour (attempt ${h === first ? 1 : 2}): ${h.atE === null ? 'never reported at E' : `at E from ${ms(h.atE)}`}; shot ${span}${h.atE === null ? '' : `, ${ms(h.from - h.atE)} into the hold and ${ms(h.atE + 3000 - h.to)} before its 3 s end`}, reads and screenshot ${ms(h.to - h.from)}; ${show(h.s0)} → ${show(h.s)}`);
-    for (const r of rows) t.diagnostic(`${r.name} against ${r.against}: central residual r/g/b ${rgb(r.d.abs)} (signed ${rgb(r.d.signed)}; ${(100 * r.d.off).toFixed(3)}% of pixels off by more than 2 levels)`);
+    for (const r of rows) t.diagnostic(`${r.name} against ${r.against}: central residual r/g/b ${rgb(r.d.abs)} (signed ${rgb(r.d.signed)}; ${r.d.differ} of ${r.d.values} channel values differ; ${(100 * r.d.off).toFixed(3)}% of pixels off by more than 2 levels)`);
     assert.ok(held(g.dwell.s0, 'idle') && held(g.dwell.s, 'idle'), `the glide did not stay idle at E through the dwell shot: before ${JSON.stringify(g.dwell.s0)}, after ${JSON.stringify(g.dwell.s)}`);
     assertNone(missed(h), `the tour was not shot in its hold at E on either attempt (the camera holds at E from about 5.1 s to 8.1 s after the first frame); on the last one `);
     const broken = rows.filter((r) => !r.d.abs.every((x) => x <= MAX_RESIDUAL)).map((r) => `${r.name}: the central region differs from ${r.against} by ${rgb(r.d.abs)} of its light in red/green/blue (signed ${rgb(r.d.signed)}; ${(100 * r.d.off).toFixed(3)}% of pixels off by more than 2 levels); each must be at most ${MAX_RESIDUAL}`);
