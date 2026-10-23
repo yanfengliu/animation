@@ -201,7 +201,11 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
   - The budget probe's sample is bounded by the animation frame, so a double draw now reads 96,000 particles at 5.45–5.90×.
   - Timing misses take the error path, and a missed capture hold is retried once on the loop's next pass.
   - Exact counts replace "exactly 0" claims: every picture shows 0 differing channel values. The identity of the shipped render with the two layers differs by one level in 7–623 values a frame.
-- [ ] Full mutation proof on `df0dac7`, the only browser workload while it runs, beside review round 3.
+- [x] Review round 3 of repair round 3 (`8560485..df0dac7`), both lanes on a clone of `df0dac7`, 2026-10-22. Dispositions are in [reviews/3_integration.md](reviews/3_integration.md).
+  - Eight findings, F96–F103, none against the owner's rule. Codex rates two major, Claude rates all minor.
+  - They repeat four classes that rounds 1–3 each found again after repairs. So, by fleet R11's reassessment, gate behaviour is not repaired further: F96–F102 become stated bounds, and F103's doc claims are corrected. The owner can ask for another round; repair rounds used: 3 of 5.
+- [ ] Full mutation proof on `df0dac7`, restarted at 18:16 after a session restart, the only browser workload while it runs. Then audit its kills for any mutant that only a timing line kills (F98–F100).
+- [ ] Docs pass for F96–F103 in AGENTS.md and the defect register now. The test-file comments wait until after the proof, then one final `npm test` on the final revision.
 - [ ] Republish the artifact, then the devlog, Outcome and cleanup.
 
 ## Outcome
