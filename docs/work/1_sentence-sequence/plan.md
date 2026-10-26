@@ -3,7 +3,7 @@
 Status: active
 Owner: Claude coordinator session
 Created: 2026-10-15
-Updated: 2026-10-21
+Updated: 2026-10-26
 
 ## Problem and outcome
 
@@ -170,10 +170,10 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
     - F70 did not hold on today's code: a page that ignores `textof` fails 8 of the illusion file's 13 tests by checks. The `textof-ignored` mutant records that.
     - F75: `MIN_LIFT` moved from 1.45 to 1.51. The page measures 1.532–2.046 and the β 0.2 mutant 1.308–1.498 (seeds 1–12). The stale comments are corrected.
     - Moved from AGENTS.md by W27 on 2026-10-25 (runs of 2026-10-22): the targeted run, of the 2 new mutants and the 7 whose checks R1d changed, took about 204 s per page mutant (191–222 s). R1d's checks reuse the illusion file's renders and add no time; after R1d, `npm test`'s last phase took 38.6–38.7 s and its sequence phase 59.1–59.4 s. Before F65's clip, with the whole frame and four reads, the tour shot's reads and screenshot took 0.35–0.40 s and ended 1.08–1.13 s before the hold did; review round 0 saw 0.40–0.96 s and 0.53–1.10 s.
-  - F72 is open until the owner answers.
-- Owner questions, 2026-10-22:
-  - F72: should one recorded pass loop as a video without a jump? That needs the particles' drift to repeat once per pass.
-  - F73: is the stillness of each message, seen from its own eye, an acceptable cue?
+  - F72 went to the owner, who skipped it on 2026-10-26 (below).
+- Owner questions, 2026-10-22, answered on 2026-10-26:
+  - F72: should one recorded pass loop as a video without a jump? That needs the particles' drift to repeat once per pass. Skipped: capture mode stays as it is, and README.md says that one recorded pass, played as a video loop, jumps where it starts again.
+  - F73: is the stillness of each message, seen from its own eye, an acceptable cue? Kept.
 - Leftover worktrees: `.claude/worktrees/nifty-bardeen-a20921` is the folder of a running fleet session ("Make fleet's drift gate work from linked worktrees"), and `.claude/worktrees/suspicious-wescoff-85e29d` is the folder of the archived fleet session that started it. Neither holds work-unit-1 work, so this unit leaves them to those sessions.
 - [x] Review round 1 of repair round 1 (`8dc6893..6adc5b8`), both lanes on a clone of `6adc5b8`, 2026-10-22. Dispositions are in [reviews/1_integration.md](reviews/1_integration.md).
   - 2 major and 8 minor findings, F77–F86. None is against the owner's rule; both lanes found the rendering ties intact.
@@ -210,9 +210,11 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
 - [x] Review round 3 of repair round 3 (`8560485..df0dac7`), both lanes on a clone of `df0dac7`, 2026-10-22. Dispositions are in [reviews/3_integration.md](reviews/3_integration.md).
   - Eight findings, F96–F103, none against the owner's rule. Codex rates two major, Claude rates all minor.
   - They repeat four classes that rounds 1–3 each found again after repairs. So, by fleet R11's reassessment, gate behaviour is not repaired further: F96–F102 become stated bounds, and F103's doc claims are corrected. The owner can ask for another round; repair rounds used: 3 of 5.
-- [ ] Full mutation proof on `df0dac7`, restarted at 18:16 after a session restart, the only browser workload while it runs. Then audit its kills for any mutant that only a timing line kills (F98–F100).
+- [ ] Full mutation proof of the final code, then an audit of its kills for any mutant that only a timing line kills (F98–F100).
+  - Session ends stopped it three times: on `df0dac7` on 2026-10-22, after 1 mutant and after 26, and on `560ac55` on 2026-10-25, where it ran as a separate hidden process.
+  - Since 2026-10-26 12:46 it runs on `560ac55` in 12 resumable batches of 11 named mutants (`proof-batches.sh`), as the only browser workload.
 - [x] Docs pass for F96–F103 in AGENTS.md and the defect register, W26, committed as `daaffcc` on 2026-10-22: the bounds, the corrected claims, and a note that kills printed at the timing lines may be timing misses.
-- [ ] After the proof: apply the test-file comment fixes (`tmp/wu1-final-comment-fixes.md`, ignored), then run one final `npm test` on the final revision.
+- [x] The test-file comment fixes, committed as `560ac55` on 2026-10-25, before the final proof rather than after it. With comments stripped, the test code is line for line unchanged; only the defect text of `hold-names-next-early` changed. `npm test`: 48 of 48 (266.0 s).
 - [x] Artifact republished as version 4 (version id `1792722001-a3c9`) at https://claude.ai/artifact/DXryp6rehkTohF7Eumat5f on 2026-10-22. It holds `df0dac7`'s `index.html` with the document wrapper stripped (9 lines), and is private until the owner shares it.
 - [ ] The devlog, the Outcome with each acceptance criterion checked, and cleanup.
 
