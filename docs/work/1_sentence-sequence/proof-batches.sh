@@ -22,8 +22,10 @@ for list in "$DIR"/batch-??.txt; do
   code=$?
   summary=$(grep -E "^control |mutant\(s\):" "$b.log" | tail -n 1)
   echo "$(basename "$b") exit $code $(date -Iseconds) | $summary" >> "$DIR/runner.log"
-  # Only a batch whose control ran green and that judged every mutant counts as done; a broken
-  # environment (control red, exit 2, or every test failing at once) is left for a rerun.
+  # A batch counts as done once its control ran green and every mutant got a verdict (exit 0, or exit 1
+  # for a survivor, an errored or a flagged mutant); a red control (exit 2) or a crash is left for a
+  # rerun. An environment that breaks after the control shows as errored or flagged mutants in a done
+  # batch, so read every batch's summary after the proof, and delete that batch's .done to rerun it.
   if [ "$code" -eq 0 ] || { [ "$code" -eq 1 ] && grep -q "^control green" "$b.log"; }; then
     echo "exit $code | $summary" > "$b.done"
   else
