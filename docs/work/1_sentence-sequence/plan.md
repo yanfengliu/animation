@@ -70,7 +70,7 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
 - [ ] Every particle renders alike at every angle, the six viewpoints included (owner directive, 2026-10-11). Checked by the existing alike gates extended to every viewpoint.
 - [ ] Away from the viewpoints (midway between neighbours, and at far angles) no message is legible. Honest smears near each viewpoint are expected. Checked by screenshots and by gates.
 - [ ] The tour at load visits hello world, the face, "What", "a", "beautiful" and "world" in that order, holding exactly at each viewpoint. Play replays it, input stops it, and reduced motion is respected. Checked through real input.
-- [ ] `#capture` shows no UI chrome and loops the sequence seamlessly; only Escape interrupts it. Checked by gates and by looking.
+- [ ] `#capture` shows no UI chrome and loops the sequence seamlessly; only Escape interrupts it. Checked by gates and by looking. "Seamlessly" means the camera's path repeats without a break; one recorded pass, played as a video loop, still jumps where it starts again, since the particles' drift does not repeat with the pass (F72, which the owner skipped on 2026-10-26).
 - [ ] The page stays smooth on an ordinary laptop. The particle count and sprite fill are kept within a stated budget, because headless runs cannot measure real-GPU frame rate.
 - [ ] `npm test` is green and the full mutation proof kills every mutant, including new ones for the per-message gates, the sequence and capture.
 - [ ] An independent review ran and its material findings are resolved. The work is on `main` and pushed, and the artifact is republished.
@@ -181,7 +181,7 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
 - [ ] Repair round 2, one worker at a time:
   - [x] R2a, W23: F78–F81, F83, and F86's sequence checks, committed as `b3c5f9b` on 2026-10-22, on top of the owner's canon sync `d14b771`.
     - `npm test`: 48 of 48 in three runs (215.0–217.9 s).
-    - 26 named mutants, 12 of them new: all killed by checks after green controls (5,631 s and 640 s).
+    - 26 named mutant runs, of 24 mutants (11 of them new; 2 ran again): all killed by checks after green controls (5,631 s and 640 s).
     - Rendering unchanged: 27 of 27 acceptance digests are identical.
     - The page now lands a running Find glide or snap, and stops a coast, when reduced motion switches on.
     - The load tour is pictured idle at "world", on arrival and 8 s later.
@@ -205,16 +205,19 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
   - Rendering unchanged: 27 of 27 acceptance digests are identical.
   - The tour picture page now clicks "Find the angle" through all six eyes after the tour and pictures each landing.
   - The budget probe's sample is bounded by the animation frame, so a double draw now reads 96,000 particles at 5.45–5.90×.
-  - Timing misses take the error path, and a missed capture hold is retried once on the loop's next pass.
-  - Exact counts replace "exactly 0" claims: every picture shows 0 differing channel values. The identity of the shipped render with the two layers differs by one level in 7–623 values a frame.
+  - Most timing misses take the error path, and a missed capture hold is retried once on the loop's next pass. The misses that still end in a check are listed in the timing bounds of `docs/gates.md` (F98–F100).
+  - Exact counts replace "exactly 0" claims: every picture shows 0 differing channel values. The identity of the shipped render with the two layers differs in 7–623 channel values a frame, each by one level but for 31 of the 44,879 in 204 renders.
 - [x] Review round 3 of repair round 3 (`8560485..df0dac7`), both lanes on a clone of `df0dac7`, 2026-10-22. Dispositions are in [reviews/3_integration.md](reviews/3_integration.md).
   - Eight findings, F96–F103, none against the owner's rule. Codex rates two major, Claude rates all minor.
   - They repeat four classes that rounds 1–3 each found again after repairs. So, by fleet R11's reassessment, gate behaviour is not repaired further: F96–F102 become stated bounds, and F103's doc claims are corrected. The owner can ask for another round; repair rounds used: 3 of 5.
-- [ ] Full mutation proof of the final code, then an audit of its kills for any mutant that only a timing line kills (F98–F100).
-  - Session ends stopped it three times: on `df0dac7` on 2026-10-22, after 1 mutant and after 26, and on `560ac55` on 2026-10-25, where it ran as a separate hidden process.
+- [ ] Full mutation proof of the final code. It is clean only if every batch exited 0, with every mutant killed and none errored or flagged; a batch with errored or flagged mutants runs again. Then an audit of its kills for any mutant that only a timing line kills (F98–F100).
+  - It did not finish three times. On `df0dac7` on 2026-10-22, a session end stopped it after 1 mutant; in the restarted run the browsers crashed at the 27th mutant, about two hours in, and the other 106 errored, 105 of them with 0 green tests, though the process ran on to its summary. On `560ac55` on 2026-10-25, a session end stopped it where it ran as a separate hidden process.
   - Since 2026-10-26 12:46 it runs on `560ac55` in 12 resumable batches of 11 named mutants (`proof-batches.sh`), as the only browser workload.
-- [x] Docs pass for F96–F103 in AGENTS.md and the defect register, W26, committed as `daaffcc` on 2026-10-22: the bounds, the corrected claims, and a note that kills printed at the timing lines may be timing misses.
-- [x] The test-file comment fixes, committed as `560ac55` on 2026-10-25, before the final proof rather than after it. With comments stripped, the test code is line for line unchanged; only the defect text of `hold-names-next-early` changed. `npm test`: 48 of 48 (266.0 s).
+- [x] Docs pass for F96–F103 in AGENTS.md and the defect register, W26, committed as `daaffcc` on 2026-10-22: the bounds, the corrected claims, and a note that kills printed at the timing lines may be timing misses. That AGENTS.md text is now in `docs/gates.md`.
+- [x] The test-file comment fixes, committed as `560ac55` on 2026-10-25, before the final proof rather than after it, since the proof had to start again anyway and could then run on the final bytes. With comments stripped, the test code is line for line unchanged; only the defect text of `hold-names-next-early` changed. `npm test`: 48 of 48 (266.0 s).
+- [x] AGENTS.md condensed from 84.5 KB: W27 moved its repair history to the R1a–R2b notes above and to the review records (`f857227`, 2026-10-25), and the coordinator moved what the suite proves, with every bound, verbatim to `docs/gates.md` (`b7d3130`, 2026-10-26), leaving 29.5 KB.
+- [x] A local rule to run the full proof in resumable batches, with its runner (`7616e58`, 2026-10-26).
+- [ ] Review round 4 of everything since round 3's target (`df0dac7..5225ddb`: docs, comments and the runner), both lanes on a clone of `5225ddb`, 2026-10-26. Dispositions are in [reviews/4_integration.md](reviews/4_integration.md).
 - [x] Artifact republished as version 4 (version id `1792722001-a3c9`) at https://claude.ai/artifact/DXryp6rehkTohF7Eumat5f on 2026-10-22. It holds `df0dac7`'s `index.html` with the document wrapper stripped (9 lines), and is private until the owner shares it.
 - [ ] The devlog, the Outcome with each acceptance criterion checked, and cleanup.
 

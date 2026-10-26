@@ -533,7 +533,7 @@ The coordinator's reassessment (fleet R11, "reassess after two failures for one 
   - doc claims drifting from the logs (F85, F95, now M8).
 - Each repair added test code that the next round found new edge cases in, so patching instances is not converging.
 - None of these findings touches the page's behaviour, legibility, hiding, or the owner's rule. Both lanes confirmed in every round that the render reads only the camera, the particle clock, the seed and the test parameters.
-- So this round stops repairing gate behaviour. The coordinator states M1–M7 as bounds in AGENTS.md, corrects the doc claims (M8), and audits the final full proof for mutants that only a timing line kills. The owner can ask for a further repair round; four of the fleet's five are left unused.
+- So this round stops repairing gate behaviour. The coordinator states M1–M7 as bounds in AGENTS.md, corrects the doc claims (M8), and audits the final full proof for mutants that only a timing line kills. The owner can ask for a further repair round; two of the fleet's five are left unused (corrected in review round 4, which found "four" here).
 
 | ID | Finding | Disposition and reason | Repair or follow-up |
 |---|---|---|---|
