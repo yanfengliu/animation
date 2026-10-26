@@ -6,7 +6,7 @@
 // each one. The observer also records when the page can first hear a change of the reduced-motion
 // preference: its listener is created before the page's own, so it hears each change first, in the
 // same task. Each frame is logged with its own stamp, the timestamp the page's frame callback gets
-// and times its moves by. Proves: the tour moves the camera at load, stops on a press and stays
+// and steps its moves by. Proves: the tour moves the camera at load, stops on a press and stays
 // stopped for the 9 s measured; a fling coasts; with reduced motion there is no tour, no coast in the
 // same page once reduced motion is switched on, and "Find the angle" jumps; and reduced motion
 // switched on during a "Find the angle" glide (from the start view to hello world's eye), a snap (an

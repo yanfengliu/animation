@@ -519,10 +519,11 @@ async function ownBothWays(m) {
 // target with no depth buffer and computes depth of field per sprite, so each fragment adds the
 // same rounded amount whatever lies under it. So pixel by pixel and channel by channel the
 // shipped render minus the sky is the text layer minus the sky plus the ambient layer minus the
-// sky, capped at 255 as the target caps it (to within one level in at most a few hundred channel
-// values a frame, as measured; see MAX_RESIDUAL). Any effect in the shipped draw
-// that the test-only draws lack, in light, colour, size or focus, breaks that identity. Returns
-// the shipped render's particle light over the sky and the identity's residual (partsResidual).
+// sky, capped at 255 as the target caps it, but for 7–623 channel values a frame, as measured: each
+// off by one level but for 31 of the 44,879 over the 204 renders, in rows 756–769 under the hint (see
+// MAX_RESIDUAL). Any effect in the shipped draw that the test-only draws lack, in light, colour,
+// size or focus, breaks that identity. Returns the shipped render's particle light over the sky and
+// the identity's residual (partsResidual).
 async function shipped(w, time) {
   const img = async (x) => (await view(wide, x)).img;
   const sky = await img(SKY(w)), full = await img(Q(w, { t: time }));

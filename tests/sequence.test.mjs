@@ -6,11 +6,12 @@
 // window.__cloud, and frame by frame through an observer that wraps requestAnimationFrame, passes
 // every frame through unchanged and records what the page reports after each one: mode(), target()
 // and view(), with the time and the frame's own stamp, the timestamp the page's frame callback gets
-// and times its moves by. The observer also records when the page can first hear a change of the
+// and steps its moves by. The observer also records when the page can first hear a change of the
 // reduced-motion preference, each key press and each click: its listeners are created before the
 // page's own, so it hears each first, in the same task. Positions are compared with the eyes in
 // tests/lib/messages.mjs, not the ones the page reports. Durations that the page times are judged
-// by the frames' stamps, which a frame drawn late does not move (review round 2, F90, F92).
+// by the frames' stamps, which a frame drawn late does not move (review round 2, F90, F92), except
+// the hold at the start view, judged by when its first and last frames were logged (F100).
 // Proves:
 // - the tour at load (a visitor's URL, no query) holds at the start view, then glides to each
 //   message's eye in sequence order and holds there exactly: every frame of a hold within 1e-6° of
@@ -38,8 +39,9 @@
 //   than CUT_HOLD_MIN_MS after the change is at the face (the cut hold begins at the change). The
 //   frame before the change must be mid-glide;
 // - for both cut holds a frame must be stamped in the last CUT_WINDOW_MS before that bound, or a hold
-//   that ended there would pass unseen. A missed setup condition fails the test as an error, not a
-//   check, since the check could not judge (F90);
+//   that ended before the bound could pass unseen; that frame shows only that the hold lasted until
+//   it, so a hold that ends inside the window can still pass (F96). A missed setup condition fails
+//   the test as an error, not a check, since the check could not judge (F90);
 // - none of these pages logs a console error or a page error;
 // - #capture hides #readout, #hint, #find and #play (checkVisibility) and the cursor (cursor: none)
 //   and plays the sequence at load; a click, a drag, a wheel step and the keys ArrowLeft, ArrowUp
@@ -79,10 +81,12 @@
 //   after the second read.
 //   A hold shot missed its hold when the hold came and went before the test could shoot it, or when
 //   its reads find the sequence moved on (target() naming the next message) with the second read
-//   more than HOLD_MS after the stamp of the hold's first frame, where the page began it. That is a
-//   timing miss, not a page defect: its picture is not compared. In capture mode a missed hold is
-//   shot once more on the loop's next pass (F93); a second miss, or a miss at the tour's or Play's
-//   hold, fails the test as an error, never as a check, so it cannot count as a mutant's kill.
+//   more than HOLD_MS after the stamp of the hold's first frame (the page began it at or after that
+//   stamp). That is a timing miss, not a page defect: its picture is not compared. In capture mode a
+//   missed hold is shot once more on the loop's next pass (F93); a second miss, or a miss at the
+//   tour's or Play's hold, fails the test as an error, never as a check. But a capture hold that no
+//   poll sees ends in a check at the wait for the next hold (F98), as does a shot whose reads take
+//   over about 8.9 s, which finds target() two messages on (F100).
 //   Leaving the eye in any other way, or within HOLD_MS, is a check, as is any residual.
 //   That each shot starts at least its lead into the hold or rest holds by construction: the test
 //   waits until then by the page's own clock before its first read, so no page can turn it red;
@@ -140,7 +144,7 @@ const CLIP = { x: Math.round(CENTRE[0] * WIDE.width), y: Math.round(CENTRE[2] * 
 const MAX_RESIDUAL = 0.001;                         // per channel, Σ|shot − reference| over the reference's light, as in tests/illusion.test.mjs; each shot's diagnostic counts the channel values that differ; 0.116–0.153 with text 1.25× brighter there (the reveal-in-* mutants)
 
 // Records, after each animation frame, [time, mode, target, az, el, stamp] as the page reports them
-// (stamp: the frame's own timestamp, which the page's frame callback gets and times its moves by);
+// (stamp: the frame's own timestamp, which the page's frame callback gets and steps its moves by);
 // for each change of the reduced-motion preference, [time, matches]; for each key press, [time,
 // key]; and for each click, [time, the id of what was clicked]; each as the page can first hear it
 // (capture listeners on window).
@@ -228,9 +232,9 @@ const log = (page, from = 0) => page.evaluate((n) => window.__log.slice(n), from
 const noErrors = (errors) => assert.deepEqual(errors, [], 'the page logged errors');
 const visible = (page) => page.evaluate(() => Object.fromEntries(['readout', 'hint', 'find', 'play'].map((id) => [id, document.getElementById(id).checkVisibility()])));
 const cursor = (page) => page.evaluate(() => getComputedStyle(document.getElementById('scene')).cursor);
+const logLength = (page) => page.evaluate(() => window.__log.length);
 // Whether the page is still the document that set window.__sameDocument. A read that a navigation
 // interrupts (Playwright: the execution context was destroyed) means the document was replaced.
-const logLength = (page) => page.evaluate(() => window.__log.length);
 const sameDocument = async (page) => {
   try { return await page.evaluate(() => window.__sameDocument === true); } catch (err) {
     if (/Execution context was destroyed/.test(String(err?.message))) return false;
@@ -577,7 +581,8 @@ test('reduced motion: no sequence at load, and Play cuts from eye to eye', async
 // hello world's eye and then at the face's, and none stamped less than CUT_HOLD_MIN_MS after `at`
 // may be at the face. The page ends the 4 s cut hold in the first frame stamped 4 s after it began,
 // so a frame drawn late cannot shorten it here. A frame must be stamped in the last CUT_WINDOW_MS
-// before the bound, or a hold that ended there would pass unseen: then `unjudged` says so.
+// before the bound, or a hold that ended before it could pass unseen: then `unjudged` says so. That
+// frame shows only that the hold lasted until it, so one that ends inside the window can pass (F96).
 function judgeCut(L, at) {
   const after = L.filter((e) => e[0] > at), rs = runs(after);
   const face = rs[1] ? rs[1].stamps[0] - at : null;

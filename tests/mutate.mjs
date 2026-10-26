@@ -291,7 +291,7 @@ const PAGE_MUTANTS = [
   { name: 'reduced-switch-short-hold', defect: 'the cut hold that reduced motion switched on mid-glide begins lasts 2 s, not 4 s',
     edits: [['    anim = null;\n    nextStep();\n  }\n});', '    anim = null;\n    nextStep();\n    if (anim && !anim.target) anim.ms = 2000;\n  }\n});']] },
   // F86: one mutant for each sequence check that had none.
-  { name: 'hold-names-next-early', defect: 'each hold of the sequence names the next message for its last 250 ms, though the camera is still at the eye, past the 100 ms that NEXT_MAX_MS allows (F86)',
+  { name: 'hold-names-next-early', defect: 'each hold of the sequence names the next message for its last 250 ms, though the camera is still at the eye, where frames still there may be stamped at most 10 ms (NEXT_STAMP_MS) after the end of the first frame that names it (F86)',
     edits: [["const k = heading >= 0 && (mode === 'tour' || mode === 'glide' || mode === 'snap') ? heading : atMessage();", "const k = heading >= 0 && (mode === 'tour' || mode === 'glide' || mode === 'snap') ? (mode === 'tour' && anim && !anim.target && performance.now() - anim.t0 > anim.ms - 250 ? (heading + 1) % M.length : heading) : atMessage();"]] },
   { name: 'find-glide-drops-target', defect: 'halfway through a "Find the angle" glide target() stops naming the message it heads for (F86)',
     edits: [["  } else if (anim && (mode === 'tour' || mode === 'glide' || mode === 'snap')) {\n", "  } else if (anim && (mode === 'tour' || mode === 'glide' || mode === 'snap')) {\n    if (mode === 'glide' && now - anim.t0 > anim.ms / 2) heading = -1;\n"]] },
