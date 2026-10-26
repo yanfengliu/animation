@@ -145,11 +145,13 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
     - 14 named mutants, 10 of them new: all killed by checks after a green control (2,532 s).
     - Rendering unchanged: 27 of 27 acceptance digests are identical.
     - Beyond the brief: the sequence file runs in its own phase, after a font-hang flake beside it. A hold's last 100 ms may name the next message, and must name exactly that one.
+    - Moved from AGENTS.md by W27 on 2026-10-25 (runs of 2026-10-22): the targeted mutation run, of the 10 new mutants and the 4 that only the sequence file kills, took about 168 s per page mutant (155–237 s).
   - [x] R1b, W20: F51–F54, with F63 and F64 folded in (illusion gates), committed as `b089b37` on 2026-10-22.
     - `npm test`: 45 of 45 in three runs (187.1–189.5 s). The illusion file grew by about 30 s.
     - 13 named mutants, 6 of them new: all killed by checks after a green control (2,662 s).
     - Rendering unchanged: 27 of 27 acceptance digests are identical. The page gained a test-only `relocate=<name>` hook.
     - The far-view hiding gate (`MAX_GHOST_LIFT` 1.33) holds the antipode ghosts near today's level: the page reaches 1.297 at most, and a mutant that halves "world"'s depth reaches 1.376.
+    - Moved from AGENTS.md by W27 on 2026-10-25 (runs of 2026-10-22): the targeted run, of the 6 new mutants and the 7 whose checks R1b changed, took about 190 s per page mutant (187–193 s).
   - [x] R1c, W21: F62, F66, F69, F71, F74 and F76, plus the `scripts/shoot.mjs` and defect-register parts of F75 (sequence, page, capture mode), committed as `0a1329b` on 2026-10-22.
     - `npm test`: 47 of 47 in three runs (201.2–202.9 s).
     - 25 named mutants, 17 of them new: all killed by checks after a green control (5,565 s).
@@ -159,6 +161,7 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
       - the readout gives way to the buttons on narrow screens.
     - Budget gate: at most 48,000 particles a frame, and sprites covering at most 3× the screen at 1920×1080, DPR 2 (2.72–2.95× measured at the start view and the six eyes).
     - Open risk: fully zoomed in, sprites cover about 13.6× the screen, and no gate bounds that. Capture mode never zooms past the default.
+    - Moved from AGENTS.md by W27 on 2026-10-25 (runs of 2026-10-22): the targeted run, of the 17 new mutants and the 8 whose anchors or checks R1c moved, took about 215 s per page mutant (199–272 s). R1c's budget and widest-readout checks add about 4 s to `npm test`'s last phase, and its "Find the angle" pictures about 7 s to the sequence phase. Before R1c the 0.660 em face pushed Play to 400.6 px, past the viewport (F74).
   - [x] R1d, W22: F65, F68, F70 and the `tests/illusion.test.mjs` parts of F75 (illusion gates), committed as `6adc5b8` on 2026-10-22. `index.html` is unchanged.
     - `npm test`: 47 of 47 in three runs (199.6–200.2 s).
     - 10 named mutants: all killed by checks after green controls (2,033 s and 405 s).
@@ -166,6 +169,7 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
     - F68: at each eye the scene's light, over the mean at its two neighbouring midpoints, must stay within 0.95–1.03. The page measures 0.976–1.003 over seeds 1–12. It catches a whole-scene glow of 5.5% at E and 3.1–4.8% at the other eyes. A 15% glow, which passed before, is now the `scene-glows-a-little` mutant.
     - F70 did not hold on today's code: a page that ignores `textof` fails 8 of the illusion file's 13 tests by checks. The `textof-ignored` mutant records that.
     - F75: `MIN_LIFT` moved from 1.45 to 1.51. The page measures 1.532–2.046 and the β 0.2 mutant 1.308–1.498 (seeds 1–12). The stale comments are corrected.
+    - Moved from AGENTS.md by W27 on 2026-10-25 (runs of 2026-10-22): the targeted run, of the 2 new mutants and the 7 whose checks R1d changed, took about 204 s per page mutant (191–222 s). R1d's checks reuse the illusion file's renders and add no time; after R1d, `npm test`'s last phase took 38.6–38.7 s and its sequence phase 59.1–59.4 s. Before F65's clip, with the whole frame and four reads, the tour shot's reads and screenshot took 0.35–0.40 s and ended 1.08–1.13 s before the hold did; review round 0 saw 0.40–0.96 s and 0.53–1.10 s.
   - F72 is open until the owner answers.
 - Owner questions, 2026-10-22:
   - F72: should one recorded pass loop as a video without a jump? That needs the particles' drift to repeat once per pass.
@@ -183,12 +187,14 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
     - The load tour is pictured idle at "world", on arrival and 8 s later.
     - Hold shots are clipped, and ended 1.11–1.43 s before their holds did.
     - The old Escape check pressed during a hold, so it never tested a glide; it now presses mid-glide.
+    - Moved from AGENTS.md by W27 on 2026-10-25 (runs of 2026-10-22): the targeted run was of the 11 new mutants and the 13 whose checks or anchors R2a moved; `escape-reloads` and `capture-reentry-reloads` ran again once the same-document read changed (11 minutes). R2a's pictures at the tour's end, with Play after it, add about 11 s to `npm test`'s sequence phase (70.4–70.6 s), and its reduced-motion test about 3 s to the last phase (41.8–42.1 s). Before R2a, `reveal-extra-text-pass` drew its extra pass in the reference too, so its capture shot at hello world could not differ, and its only kill there was a timing miss (1.78 s).
   - [x] R2b, W24: F77, F82, F84, F85, and F86's two lower edges, committed as `8560485` on 2026-10-22. `index.html` is unchanged.
     - `npm test`: 48 of 48 in three runs (211.4–214.3 s).
     - 11 named mutant runs (three new mutants): all killed by checks after green controls.
     - The budget probe now measures each draw with its own state. A sizing uniform raised 1.25× for one draw now fails at 4.25–4.61× against the 3× budget.
     - The alike bounds hold for seeds 1–12 (`MAX_CLIPPED` reaches 7.46% for seed 8 against 8%).
     - The identity of the shipped render with the two layers is now stated as measured: one-level differences in 7–623 channel values a frame, residual at most 0.0013% against 0.1%.
+    - Moved from AGENTS.md by W27 on 2026-10-25 (runs of 2026-10-22): the targeted run was of the 3 new mutants and the 4 whose checks R2b changed; the 4 budget mutants ran again once the probe's errors named the view (19 minutes).
   - F87, found by W24: the camera-mode and hold pictures still claim "exactly 0 measured", but the runs print those residuals only to four decimals, so the claim is unproven. The wrap-up docs pass corrects it, unless review round 2 finds more.
 - [x] Review round 2 of repair round 2 (`6adc5b8..8560485`), both lanes on a clone of `8560485`, 2026-10-22. Dispositions are in [reviews/2_integration.md](reviews/2_integration.md).
   - 2 major and 6 minor findings, F88–F95; none is against the owner's rule.
