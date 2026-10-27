@@ -2,8 +2,8 @@
 # Full mutation proof (node tests/mutate.mjs, 132 mutants, about 9-10 hours) in resumable batches (work unit 1).
 # Start or resume it from the repo root with: bash docs/work/1_sentence-sequence/proof-batches.sh
 # (from anywhere else, give this file's path). It runs from its copy, tmp/proof-final/run-batches.sh. Once a proof is
-# set up, that copy judges it even if this file changes; PROOF_RUNNER=new runs this file instead, which then aborts
-# on the fingerprint, so it means a fresh proof.
+# set up, that copy judges it even if this file changes. PROOF_RUNNER=new runs this file instead: it overwrites that
+# copy and aborts on the fingerprint (exit 3), so that proof can no longer resume.
 # It proves a frozen snapshot. Setup refuses a checkout with changes other than Markdown, extracts HEAD as committed
 # into tmp/proof-final/tree with a copy of node_modules (refused unless its Playwright versions are package-lock.json's),
 # and writes revision.txt: the commit, this runner's sha256, Node's path and version, the Playwright versions. Every
@@ -11,18 +11,29 @@
 # The snapshot (but its tmp/, test-results/ and playwright-report/), revision.txt, the running runner and the Node
 # version are hashed at start, after each batch and before all.done.
 # One proof at a time: tmp/mutation.lock holds the runner's Windows pid and its batch's, and before taking the lock
-# and before each batch it refuses while another bash runs a proof runner or another node runs tests/mutate.mjs.
+# and before each batch a process scan refuses while another bash runs a proof runner or another node runs
+# tests/mutate.mjs. The scan sees a bash whose first argument is the runner, or a node whose first argument after
+# options without values is tests/mutate.mjs, in a path with no space; not bash -x, node --require x, a process
+# hidden from this user or WSL. It is no lock: a run started during a batch is seen only before the next one (the
+# batch it overlapped still counts) and not after the last; two runners started together can both refuse; and a
+# reused pid among those it takes for its own ancestors or descendants can hide another run. Moving aside a lock
+# whose runner still lives lets a run the scan misses take it. The scan's query was tested only on a made-up process
+# table (2026-10-26).
 # Not seen: npm test and other projects' browser work; a snapshot edit made and reverted within one batch; the
 # Chromium build in Playwright's cache (not hashed: a Playwright upgrade plus npx playwright install in the checkout
-# can remove it mid-proof, which fails safe); git attributes other than autocrlf (none apply today). PID reuse fails
-# safe. A runner killed on this machine can report exit 0 to its caller, so read all.done: only a finished run leaves
-# one (each run first moves an earlier one to all.done.prev).
+# can remove it mid-proof, which fails safe); git attributes other than autocrlf (none apply today); Playwright's
+# integrity hashes, since only its versions are compared. For the lock, PID reuse fails safe.
+# A runner killed on this machine can report exit 0 to its caller, so read all.done: only a finished run writes one.
+# Each run moves an earlier one to all.done.prev once it holds the lock and the folder passes; a run refused before
+# that leaves it. Its note on later commits follows renames and leaves out uncommitted changes.
+# A lock stays, to be moved aside by hand, after a kill that skips the traps or a failed lock write in the copy
+# before its EXIT trap. A stopped batch whose Windows pid is unknown gets a plain kill, which can leave node running.
 # A batch's .done holds the digests of its list, the inputs and its log, and counts only while all three match.
 # Exit codes: 0 complete and clean; 1 complete, not clean (all.done says why); 2 mutate.mjs exited 2 (a red control
 # or bad usage); 3 the inputs changed or could not be hashed (see ABORTED); 4 the checkout, the lists, the catalog or
 # the folder are unusable, or a result could not be written; 5 another mutation run, a held lock or a lost lock;
 # 6 a batch crashed or the logs lack a verdict; 143 a signal stopped it. After 2, 6 or 143 that batch stays undone.
-# PROOF_DIR (default tmp/proof-final), NODE (default: the recorded one, else node) and BATCH_SIZE (default 11).
+# PROOF_DIR (default tmp/proof-final), NODE (absolute; default: the recorded one, else node), BATCH_SIZE (default 11).
 set -u
 shopt -s nullglob
 self=$(cd "$(dirname "$0")" && pwd)/${0##*/}

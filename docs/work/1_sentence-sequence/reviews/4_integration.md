@@ -1244,3 +1244,272 @@ Both lanes agree that the snapshot core holds: for this commit, neither found a 
 ### Outcome
 
 Changes requested, all in the runner, which is not part of the page or the gates. This is the third review of the runner and its sixth repair overall, past the canon's cap of five, which the owner's "Carry on until it's all done" (2026-10-26) covers. It is the last: a verification review of the third repair checks only its changes. Anything else it finds becomes a stated bound in the runner's header, unless it shows a CLEAN that is false for the snapshot's commit.
+
+## Verification review of the third runner repair
+
+### Target
+
+The third runner repair (W28): `git diff d69e6cd b62b7db`, which changes only `docs/work/1_sentence-sequence/proof-batches.sh` (now 251 lines, sha256 `dd6f0cc4`) and the local rule. The runner at `d69e6cd` is the one at `4f80295`. The reviewed diff is `tmp/review-runs/wu1-round4d/target.diff` (ignored; 2 files, 308 lines, sha256 `d287e8fb`).
+- The review was scoped, as the second re-review's outcome says: whether each of the nine changes F123–F131 asked for is made and made correctly, and whether any of them adds a defect. Other limits it found go to the runner's header as bounds.
+- Both reviewers read a clone at `tmp/review-runs/wu1-round4d/tree-b62b7db/` (ignored), detached at `b62b7db` with no remote and LF working files. Its 54 files, 8 copies of evidence among them, had the same sha256 before and after both runs, and `git status` there was clean.
+- The evidence: W28's test script for this repair, its three logs (26 cases, 93 checks, against the runner's exact bytes) and its stub; and the running proof's runner log and revision. W28 could not run the runner's process query on this machine's processes, because the permission classifier refused it twice; its tests run that query on a made-up process table.
+
+### Reviewers and coverage
+
+- Codex 0.163.0, the same command form and model header as above, after a fresh read smoke test, which passed. 13 min 53 s (20:00 to 20:13), 122,092 tokens and 16 read-only commands, all in the clone, with no scanner alert and no DLL marker. One subagent spawn failed, so none contributed.
+- Claude 2.1.308, after a fresh login check and permission smoke test, both passed: the smoke test's 5 reads and commands inside the clone ran, and its 9 outside it were denied. `modelUsage` held exactly `claude-opus-5-5[1m]`; 25 turns, $4.92, 23 min 20 s (20:00 to 20:23); 24 tool calls, all in the clone. Two were compound git commands that only read (`git ls-files -s` with `git show`, and two `git diff --stat`), which its settings let through. No subagents.
+- Citations outside the diff's hunks, checked against the clone, hold: `tests/hygiene.test.mjs:178` and `:221` (`node_modules` is skipped, so copying all of it does not change the hygiene gate), and `tmp/w28/test3.sh:336` (a batch that a new run overlapped is still marked done), `:350–355` (the race cases use a stand-in query), `:370–375` (the PID-reuse case reuses a lock owner's pid, not an ancestor's) and `:431–432` (`PROOF_RUNNER=new` replaces the copy, then aborts).
+
+### Reports
+
+#### Codex (`gpt-6-astra`, effort xhigh), 2026-10-26
+
+Redacted: nothing. The report is Codex's `-o` output, unchanged.
+
+**Summary**
+
+**3 findings: 2 major, 1 minor.** Six changes are made; changes **1, 5 and 9 are partly made**. The main remaining risk is missed mutation processes. The snapshot provenance and ordinary resume paths look correct within the stated bounds.
+
+Below, `runner` means `docs/work/1_sentence-sequence/proof-batches.sh`. All current line references are at `b62b7db`.
+
+**How I checked**
+
+I read the full current runner, its `4f80295` predecessor, the supplied diff, F123–F131 and their underlying reports, the mutation CLI/output, both package files, local rules, W28’s script/stub/three logs, and the copied legacy-proof evidence.
+
+The runner’s SHA-256 matches the evidence: `dd6f0cc48485d16ce5f1bf978aeca7c2203490f01bcbed70435e9672b283f767`. The logs report **26 cases and 93 passing checks**. Their process-query coverage uses a fabricated process table, not this machine’s live processes.
+
+No files were changed; no tests, scripts or browsers ran. One subagent dispatch failed before starting; none contributed. `tmp/w28/fixture/names.txt`, referenced by the fixture, is absent, so I could not independently check that catalog.
+
+**Findings**
+
+**X1 — The process filter misses valid mutation command lines**
+
+- **Location:** `runner:46–49`, called at `:82` and `:200`.
+- **Severity:** major.
+- **Change:** 1.
+
+The regex requires the script path to contain no whitespace and permits preceding Node options only when they have no separate value.
+
+For example, an unrelated process running `node.exe --require node:fs tests/mutate.mjs` is missed: `--require` matches the option group, but its argument `node:fs` prevents the script match. A quoted absolute mutation-script path containing a space is also missed.
+
+A directly launched mutation run takes no runner lock. Consequently, both scans can succeed and the new runner can start browsers beside that visible mutation process.
+
+**Suggested fix:** recognize the requested script markers throughout non-owned command lines, handling quoted paths and options with separate values. Add those shapes to the fabricated process-table cases.
+
+**X2 — Reused ancestor PIDs can hide another mutation run**
+
+- **Location:** `runner:45–49`, `:57`; contrary header claim at `:17–18`.
+- **Severity:** major.
+- **Changes:** 1 and 9.
+
+`PROOF_KIN` preserves numeric ancestor PIDs between scans. Each subsequent scan treats any process currently occupying those PIDs as owned, without checking its identity or creation time.
+
+Concrete sequence:
+
+1. A launching ancestor is recorded in `PROOF_KIN`.
+2. That ancestor exits during a batch.
+3. Before the next scan, Windows reuses its PID for an unrelated `node tests/mutate.mjs` process.
+4. Line 45 marks that new process as owned; line 47 excludes it.
+
+The runner can then start another batch beside it. Thus PID reuse can defeat exclusion; it does not always “fail safe.” W28’s reuse case checks a reused **lock-owner** PID, not a reused cached ancestor (`tmp/w28/test3.sh:370–375`).
+
+**Suggested fix:** preserve and compare process creation times alongside cached PIDs. If this remains an accepted bound, the header must explicitly describe the possible missed process.
+
+**X3 — A code-to-Markdown rename can suppress the checkout-change note**
+
+- **Location:** `runner:235–237`.
+- **Severity:** minor.
+- **Change:** 5.
+
+Suppose a later commit renames `scripts/shoot.mjs` to `scripts/shoot.md` without changing its contents. With rename detection enabled, `git diff --name-only <snapshot> HEAD` reports the new Markdown path. The following filter removes it, so `all.done` gives no note despite removal of a non-Markdown source file.
+
+The snapshot proof remains valid, but the requested checkout-change notice is incomplete.
+
+**Suggested fix:** add `--no-renames`, as the setup dirty check already does at `runner:150`, and cover this rename case.
+
+**The nine changes**
+
+1. **Partly made:** both process scans and exit 5 exist, but recognition and cached ownership have X1–X2 — `runner:43–60,82,199–200`.
+2. **Made:** automatic takeover is removed; held-lock diagnostics and ownerless retry advice exist — `runner:66–85`.
+3. **Made:** the signal trap precedes launch, every `own` status is checked, ownership is checked before batches, and EXIT removes `owner.new` — `runner:79–87,139–143,199–209`.
+4. **Made:** provenance is written before hashing and fingerprinted; resume selects the recorded Node and existing runner copy — `runner:98–116,157–169`.
+5. **Partly made:** completion rotation and checked publication exist; the checkout note has X3 — `runner:104–105,235–249`.
+6. **Made:** folder refusal explains running/resumable older proofs and when moving is appropriate — `runner:89–96`.
+7. **Made:** all `node_modules` is copied and both Playwright versions are checked against the snapshot lockfile — `runner:154–161`.
+8. **Made:** abort advice removes `npm ci` and distinguishes Node-only recovery — `runner:122–124`.
+9. **Partly made:** all requested bounds are named, but the PID-reuse safety claim is incorrect — `runner:15–19`, X2.
+
+**Other limits**
+
+- An independent mutation run can start immediately after a process scan; the scans do not provide atomic exclusion against noncooperating launches (`runner:200–206`).
+- The inherited fallback after failed tree termination kills only the immediate child, so descendant cleanup is not assured (`runner:141–142`).
+- The inherited lock rewrite still occurs before EXIT cleanup is installed; failure there can leave a lock requiring manual recovery (`runner:79–87`).
+
+**Read outside the diff**
+
+- `tests/mutate.mjs:450–539`.
+- `package.json:1–18`; `package-lock.json:1–48`.
+- `docs/work/1_sentence-sequence/reviews/4_integration.md:814–1245`.
+- `tmp/w28/test3.sh:1–452`; `fixture/mutate.stub.mjs:1–70`; all three supplied logs.
+- `tmp/proof-final/revision.txt:1`; `runner.log:1–24`.
+
+#### Claude (`claude-opus-5-5[1m]`, effort max), 2026-10-26
+
+Redacted: nothing. The report is the `result` field of the run's final event; its headings are moved down three levels to fit this record.
+
+**Verification review of W28's third runner repair (`git diff d69e6cd b62b7db`)**
+
+##### Summary
+
+- **3 findings, all minor (C1–C3). No major ones.**
+- **All nine changes are made.** One claim in change 9's header is wrong: "PID reuse fails safe" holds for the lock, but not for the new process check (C1).
+- Through these changes, I found no way for the runner to write a CLEAN that is false for the snapshot's commit, or to exit 0 for a proof that is not clean.
+- The new runner refuses the running 7616e58 proof twice over:
+  - its process check sees that proof's runner and node (`proof-batches.sh:82`, exit 5);
+  - its folder check rejects `tmp/proof-final`, whose `revision.txt` has no `commit ` line (`:90`, exit 4).
+
+##### How I checked
+
+- **Read:**
+  - the runner at `b62b7db` in full (251 lines) and the target diff;
+  - the `4f80295` runner and the `7616e58` runner (`git show`);
+  - `reviews/4_integration.md:814–1246`;
+  - `local-rules.md`, `tests/mutate.mjs:1–60` and `:420–540`, `package.json`, `package-lock.json`, `docs/work/.gitattributes`, `plan.md:215–216`;
+  - W28's `test3.sh`, its stub and its three logs;
+  - the copies of `tmp/proof-final/revision.txt` and `runner.log`.
+- **Git checks:** `git diff --stat` confirms that `d69e6cd` added only the review record. `git log` gives the commit time, 19:46:53.
+- **W28's counts hold:** 26 cases and 93 checks (30 + 33 + 30), all passing.
+- **Not done:** I used no subagents, ran nothing and changed no file.
+- **Could not check:**
+  - **The runner's sha256** against `dd6f0cc4…`: I had no hashing tool. It has 251 lines, as the logs say, and the logs are stamped from 19:19 on, before the commit.
+  - **The real `Win32_Process` query on this machine.** W28 never ran it either. Cases 18–19 answer from a stand-in PowerShell, either on a made-up table or listing only the runner itself.
+  - **Whether the bash before `exec` really ends.** W28's fixture assumes it does (`tmp/w28/test3.sh:69`, `:76`).
+  - **How Windows reuses PIDs.**
+  - **The version check under this repo's `"type": "module"`.** `node -e` at `:158` ran only in W28's fixture, which has no such field. Node treats `--eval` input as CommonJS either way, so I expect it to work.
+  - **What a session end here sends:** a signal, or a kill with none.
+
+##### Findings
+
+**C1 (minor; changes 1 and 9). PID reuse can hide another run from the process check, though the header says it fails safe.**
+- **Where:** `proof-batches.sh:45` (walk up from each kin pid), `:48` (walk up from each match), `:57` (`PROOF_KIN` carries the pids walked), `:17–18` ("PID reuse fails safe").
+- **The cause:** both walks follow `ParentProcessId` without checking that the parent is older than the child.
+- **First scenario (`:45`):**
+  - The copy's parent is the bash that `exec`'d it, which has ended. Its pid is also in `PROOF_KIN`.
+  - So before every batch, the walk reaches that dead pid.
+  - Suppose Windows has since given it to a process of another mutation run, such as a Chromium process under that run's `node tests/mutate.mjs`.
+  - Then that process and all its ancestors (the other run's node and its runner bash) count as this runner's own and are skipped at `:47`. The next batch starts beside that run.
+- **Mirror case (`:48`):** a process of another run counts as this runner's descendant when the pid of one of its dead ancestors now belongs to:
+  - this runner;
+  - the subshell of this very query;
+  - its PowerShell.
+- **Why minor:** this is the "runs beside" kind of defect, but it needs a PID reuse at the moment of a check. Even then:
+  - a red control or a survivor still fails safe;
+  - kills at the timing lines still rest on the F98–F100 audit.
+- **Fix, either of:**
+  - in both walks, follow a parent only when its `CreationDate` is earlier than the child's, and carry each pid with its `CreationDate` in `PROOF_KIN`;
+  - or restate the header bound as "PID reuse fails safe for the lock but can hide another run from the process check".
+
+**C2 (minor; change 4). `PROOF_RUNNER=new` overwrites a set-up proof's copy, so the proof can no longer resume.**
+- **Where:** `:99–102`, `:116`, `:123–124`; header `:5–6`.
+- **Scenario:**
+  - 8 of 12 batches are done. A session reads `:5` and resumes with `PROOF_RUNNER=new` to get a newer runner.
+  - `:101` copies the new runner over `run-batches.sh`, and the start check exits 3 on the runner line (W28's case 24, `test3.sh:431–432`).
+  - The copy that set up the proof is now gone, so the plain command also exits 3.
+  - ABORTED says to move the folder aside for a fresh proof. About 7 hours of batches are lost, unless someone thinks to restore the old bytes from git.
+- **Fix, either of:**
+  - when `names.txt` exists, refuse `PROOF_RUNNER=new` with exit 4 ("move $DIR aside for a fresh proof") before writing anything;
+  - or keep the old copy as `run-batches.sh.prev` and name it in ABORTED.
+
+**C3 (minor; change 3). A failed `own` in the copy leaves the lock held.**
+- **Where:** `:80`, compared with `:84` and `:87`.
+- **Scenario:**
+  - In the copy, `mine` passes and `own` fails, for example because `owner.new` cannot be written or the rename is refused.
+  - The copy exits 5 before its EXIT trap is set at `:87`.
+  - The lock keeps the first run's owner line, whose Windows pid ended at the `exec`.
+  - Every later run exits 5 with "Both have ended … move $LOCK aside by hand".
+  - The first run's branch at `:84` cleans up after the same failure; this one does not.
+- **Fix, either of:**
+  - set the EXIT trap (it is already guarded by `mine`) before `:79`;
+  - or remove the lock in `:80`'s failure branch while it is still this runner's.
+
+##### The nine changes
+
+1. **Made.** `:40–61`, called at `:82` and `:200`; header `:13–15`. It looks only at the first argument (bash/sh: the runner; node: `tests/mutate.mjs`), as the comment at `:40–42` says. Gap: C1.
+2. **Made.** `:63–78` and `:83`. No takeover is left. The "no owner line" message says to retry, and every held message names each pid's program or "ended".
+3. **Made.**
+   - The trap is set at `:204–205`, before the batch starts at `:206`.
+   - `own` is checked at `:80`, `:84`, `:207` and `:209`.
+   - `mine` is checked before each batch at `:199`.
+   - The EXIT trap at `:87` also removes `owner.new`.
+   - Gap: C3.
+4. **Made.**
+   - `revision.txt` is written at `:167–168`, before the fingerprint at `:169`, and is hashed at `:116`.
+   - `NODE` defaults to the recorded path at `:106`.
+   - The folder's own copy runs at `:98–103`.
+   - Gap: C2.
+5. **Made.** `all.done` moves at `:104–105`, after the lock and the folder check. The note is at `:235–237` and `:241`. The write is checked at `:248`, and "all done" is logged after it at `:249`.
+6. **Made.** `:91–96`.
+7. **Made.** All of `node_modules` is copied at `:154–155`; the versions are checked at `:158–161`.
+8. **Made.** `:122–124`.
+9. **Made, but "PID reuse fails safe" (`:17–18`) is not true of the process check (C1).** `:15–19`.
+
+##### Other limits
+
+- A mutation run that starts during a batch is seen only at the next batch's check. The batch it overlapped is still marked done (case 18 asserts this, `test3.sh:336`), and no check runs after the last batch.
+- The check sees only:
+  - a bash or sh whose first argument is the runner;
+  - a node whose first argument, after options without values, is `tests/mutate.mjs`;
+  - and only when the script path has no space.
+
+  So it misses `bash -x <runner>`, `node --require x tests/mutate.mjs`, a quoted path with a space, a command line Windows hides from this user (elevated, or another user's), and WSL.
+- Two runners started within one query's time of each other can both exit 5, each seeing the other. W28's race cases (`test3.sh:350–355`) used a stand-in that lists only the runner itself, so they prove the lock, not the query.
+- `own` (`:67`) writes without checking the token, so a runner that lost its lock can overwrite another runner's owner line. This needs the query to have missed one of them.
+- The Playwright check (`:158–161`) compares versions only, not `package-lock.json`'s integrity hashes.
+- The `all.done` note (`:235–237`) covers commits since the snapshot's commit, not uncommitted changes, and does not name the checkout's HEAD.
+- A run that is refused or killed before `:104` (during the query, the lock, the folder check or the `exec`) leaves the earlier `all.done` in place.
+- After a kill that skips the traps, the lock has to be moved aside by hand before "the same command resumes it" (`local-rules.md:7`). Line `:9` of the rule says so.
+- A relative `NODE` is recorded as `command -v` prints it (`:157`), not as an absolute path.
+- When no Windows pid is known, `stop` falls back to `kill` (`:142`), which can leave node running.
+
+##### Read outside the diff
+
+- `proof-batches.sh:129–138`, `:179–193`, `:223–231` (whole file read)
+- `4f80295:docs/work/1_sentence-sequence/proof-batches.sh:1–187`
+- `7616e58:docs/work/1_sentence-sequence/proof-batches.sh:1–34`
+- `tests/mutate.mjs:1–60`, `:420–540`
+- `tests/hygiene.test.mjs:178`, `:221` (`node_modules` is skipped, so copying all of it does not change the gate)
+- `package.json:1–18`, `package-lock.json:1–48`, `docs/work/.gitattributes:1`
+- `docs/work/1_sentence-sequence/plan.md:215–216`
+- `docs/work/1_sentence-sequence/reviews/4_integration.md:814–1246`
+- `tmp/w28/test3.sh:1–452`, `tmp/w28/fixture/mutate.stub.mjs:1–70`
+- `tmp/w28/test3-final-1.log:1–172`, plus the result lines of `-2.log` and `-3.log`
+- `tmp/proof-final/runner.log:1–24`, `tmp/proof-final/revision.txt:1`
+
+### Findings and disposition
+
+Both lanes found no way, through these changes, for the runner to write a CLEAN that is false for the snapshot's commit, or to exit 0 for a proof that is not clean. Claude found all nine changes made; Codex found six made and three partly made, through the gaps in F132, F133 and F136. Both found that the claim "PID reuse fails safe" holds for the lock but not for the new process scan. Codex rates its two findings on the scan major; Claude rates all its findings minor.
+
+| ID | Finding | Disposition and reason | Repair or follow-up |
+|---|---|---|---|
+| F132 | Codex X2 (major) and Claude C1 (minor): the process scan trusts recorded parent pids, so a reused pid can hide another mutation run, and the header's "PID reuse fails safe" is not true of the scan. | Accepted as a bound. It needs a pid reused at the moment of a check. Even then no CLEAN is false: a red control or a survivor still shows, and kills at the timing lines still rest on the F98–F100 audit. | The header now says PID reuse fails safe for the lock but can hide another run from the scan. |
+| F133 | Codex X1 (major), and a limit in Claude's report: the scan sees only a bash whose first argument is the runner and a node whose first argument after options without values is `tests/mutate.mjs`, in a path with no space. | Accepted as a bound. This repo's commands give those shapes, and its path has no space. | The header lists what the scan sees and what it misses. |
+| F134 | Claude C2 (minor): `PROOF_RUNNER=new` overwrites the copy that set a proof up, so that proof aborts (exit 3) and can no longer resume. | Accepted as a bound. The header already said it means a fresh proof. | The header now says the proof can no longer resume. |
+| F135 | Claude C3 (minor), and a limit in Codex's report: a failed lock write in the copy, before its EXIT trap is set, leaves the lock held. | Accepted as a bound. It fails safe: later runs refuse and say to move the lock aside by hand. | Stated in the header. |
+| F136 | Codex X3 (minor): the `all.done` note on later commits follows renames, so a code file renamed to Markdown goes unnamed. | Accepted as a bound. The note is advice; the proof stays valid for its snapshot. | Stated in the header. |
+
+The header also states the other limits both reports list:
+- a run started during a batch is seen only before the next one, and not after the last (both);
+- two runners started together can both refuse (Claude);
+- the scan's query was tested only on a made-up process table (both);
+- moving aside a lock whose runner still lives lets a run the scan misses take it (Claude);
+- only Playwright's versions are compared, not its integrity hashes (Claude);
+- a run refused before it holds the lock and passes the folder check leaves an earlier `all.done` (Claude);
+- the note leaves out uncommitted changes (Claude);
+- a stopped batch whose Windows pid is unknown gets a plain kill, which can leave node running (both);
+- `NODE` should be an absolute path (Claude).
+
+### Outcome
+
+Accepted with bounds. As the second re-review's outcome set, the runner is not repaired again. The commit that records this review changes only its header's comments: with comment lines removed, the runner equals `b62b7db`'s line for line, and `bash -n` passes.
+
+The scan's query has never run on this machine's processes. The permission classifier refused it twice when W28 ran it on its own, and the coordinator did not run it either. The proof now running uses `7616e58`'s runner and the coordinator's hand checks (F104, F105), so these bounds do not touch this work unit's proof.

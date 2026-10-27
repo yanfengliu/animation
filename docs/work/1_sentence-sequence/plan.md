@@ -219,7 +219,11 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
 - [x] The test-file comment fixes, committed as `560ac55` on 2026-10-25, before the final proof rather than after it, since the proof had to start again anyway and could then run on the final bytes. With comments stripped, the test code is line for line unchanged; only the defect text of `hold-names-next-early` changed. `npm test`: 48 of 48 (266.0 s).
 - [x] AGENTS.md condensed from 84.5 KB: W27 moved its repair history to the R1a–R2b notes above and to the review records (`f857227`, 2026-10-25), and the coordinator moved what the suite proves, with every bound, verbatim to `docs/gates.md` (`b7d3130`, 2026-10-26), leaving 29.5 KB.
 - [x] A local rule to run the full proof in resumable batches, with its runner (`7616e58`, 2026-10-26).
-- [ ] Review round 4 of everything since round 3's target (`df0dac7..5225ddb`: docs, comments and the runner), both lanes on a clone of `5225ddb`, 2026-10-26. Dispositions are in [reviews/4_integration.md](reviews/4_integration.md).
+- [x] Review round 4 of everything since round 3's target (`df0dac7..5225ddb`: docs, comments and the runner), both lanes on a clone of `5225ddb`, 2026-10-26. Dispositions are in [reviews/4_integration.md](reviews/4_integration.md).
+  - F104–F114: the coordinator corrected the docs (`a6efa30`, `50f0fea`); the runner's gaps went to W28.
+  - W28 then repaired the runner three times, and both lanes reviewed each repair: `70f4ebb` (F115–F122), `4f80295`, which proves a frozen snapshot of the commit (F123–F131), and `b62b7db`, whose scoped verification review found F132–F136.
+  - As the second re-review's outcome set, the runner is not repaired again: its header states F132–F136 and the reports' other limits as bounds, in a comment-only change. These were the work unit's fourth to sixth repair rounds, past the canon's cap of five, which the owner's "Carry on until it's all done" (2026-10-26) covers.
+  - The runner's process scan has never run on this machine's processes: the permission classifier refused its query twice when W28 ran it on its own, so W28 tested it on a made-up process table.
 - [x] Artifact republished as version 4 (version id `1792722001-a3c9`) at https://claude.ai/artifact/DXryp6rehkTohF7Eumat5f on 2026-10-22. It holds `df0dac7`'s `index.html` with the document wrapper stripped (9 lines), and is private until the owner shares it.
 - [ ] The devlog, the Outcome with each acceptance criterion checked, and cleanup.
 
