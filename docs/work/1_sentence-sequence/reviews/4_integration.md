@@ -421,3 +421,388 @@ None of the findings is against the owner's rule, and none is in `index.html`, `
 ## Round outcome
 
 Changes requested: four in the proof runner (F104–F106 and its part of F112) and the rest in the docs. None is against the owner's rule, and the page and the gates' code are unchanged. Repair round 4 makes them: the docs by the coordinator, the runner by W28. Its runner change gets a focused re-review. Repair rounds used: 4 of 5.
+
+## Focused re-review of the repairs
+
+### Target
+
+Round 4's repairs as integrated on `main`: `git diff 5225ddb 70f4ebb`, without this record. That is `a6efa30`, the coordinator's docs fixes for F107–F114, and `70f4ebb`, W28's rewrite of the proof runner for F104–F106 with the local rule (F112). `index.html`, `scripts/` and `tests/` are unchanged in this range.
+- The reviewed diff is `tmp/review-runs/wu1-round4b/target.diff` (ignored; 6 files, 320 lines, sha256 `9c3125bc`), recoverable from those commits.
+- Both reviewers read a clone at `tmp/review-runs/wu1-round4b/tree-70f4ebb/` (ignored), detached at `70f4ebb` with no remote and, this time, LF working files as committed (`core.autocrlf=false`). Its 65 files, 19 copies of evidence among them, had the same sha256 before and after both runs, and `git status` there was clean.
+- The evidence: W28's test script, its log (76 cases against the runner's exact bytes, sha256 `df44c275`), its stub of `tests/mutate.mjs` and its signal probe; and the running proof's runner copy, name lists, hashes, revision, runner log and batches 0–3's logs and markers.
+
+### Reviewers and coverage
+
+- Codex 0.163.0, the same command form, model header and smoke test as above. 12 min 50 s (16:37 to 16:50), 169,053 tokens and 23 read-only commands: PowerShell `Get-Content` and `ForEach-Object`, `rg`, and git with `-c safe.directory=<clone>`, all in the clone. The scanner's one alert was a false match, an `rg` pattern naming `launch(` and `PLAYWRIGHT`. No DLL markers but the one inside a quoted line of this record. One subagent spawn failed, so none contributed.
+- Claude 2.1.308, the same flags, with a fresh login check and permission smoke test, both passed. `modelUsage` held exactly `claude-opus-5-5[1m]`; 46 turns, $5.54, 23 min 24 s (16:37 to 17:01); 45 tool calls, all in the clone. A `| head` pipe was denied. Read-only git commands outside the allow list ran there (`git ls-files`, `git grep`, `git cat-file`), which Claude Code treats as read-only; each read only the clone's own history. No subagents.
+- Citations outside the diff's hunks, checked against the clone, hold: `tests/mutate.mjs:34` (mutants go to `tmp/mutants`) and `:444` (`TREE_SKIP` names only root-level folders), `tests/hygiene.test.mjs:175–183` (the walk skips only `node_modules`), `tests/sequence.test.mjs:135` (`LOOP_WAIT_MS`), `docs/work/.gitattributes:1` (`* -text`), `tmp/proof-final/revision.txt:1` (a bare hash, so the new runner refuses the folder), `tmp/w28/test.sh:176` and `tmp/w28/probe-kill.log:4` (the old design's child lived on after a kill).
+
+### Reports
+
+#### Codex (`gpt-6-astra`, effort xhigh), 2026-10-26
+
+Redacted: nothing. The report is Codex's `-o` output, unchanged.
+
+**Summary**
+
+**8 findings: 6 major, 2 minor. Changes requested.**
+
+The runner repairs several ordinary resume failures, but can still report CLEAN with incomplete coverage or unrecorded inputs. Its locking and interruption handling can also admit overlapping proofs. Most documentation repairs are correct; F108’s stale date remains.
+
+The supplied old proof folder is correctly refused before its files are rewritten.
+
+**How I checked**
+
+I read the diff, both round 4 reports and dispositions, the runner, W28’s tests and stub, the copied proof evidence, and the relevant gate code and documentation. I traced failure scenarios without executing them.
+
+The runner’s SHA-256 matches W28’s recorded value: `df44c2752709fa8986a4d826e0cd7f43d2f43174a39cb1419b73d5b6595adc11`. Git confirms `index.html`, `scripts/` and `tests/` are unchanged across the target range. The checkout remained clean.
+
+No tests, repository scripts or browsers ran. No files changed. One subagent dispatch failed before starting; no subagent contributed. The original R3 logs and W28’s `fixture/names.txt` are absent from this clone, so I could not independently check their historical measurements or fixture contents.
+
+Below, `runner` means `docs/work/1_sentence-sequence/proof-batches.sh`. All line references are at `70f4ebb`.
+
+**Findings**
+
+**X1 — The catalog can shrink during a run and still finish CLEAN**
+
+- **Location:** `runner:87–94`, `runner:99`, `runner:124–132`.
+- **Severity:** major.
+- **Concerns:** F104.
+
+While batch 01 runs, remove `powershell-quoted-switch-opener` from both `names.txt` and the future `batch-12.txt`. These ignored files are outside the fingerprint.
+
+The initial catalog comparison has already passed. Batch 12 subsequently reads its shortened list and runs ten mutants. Completion compares the logs against the shortened `names.txt`, so it can write **CLEAN, 131 mutants** and exit 0. The actual catalog still contains 132.
+
+W28’s mid-run list tests cover an emptied list and a moved name, but not coordinated removal from the manifest and a future list (`tmp/w28/test.sh:248–256`).
+
+**Suggested fix:** retain the validated catalog independently of mutable proof files, compare final coverage against it, and revalidate lists and marker bindings before publishing completion.
+
+**X2 — The PID file is not an exclusive lock**
+
+- **Location:** `runner:32–38`.
+- **Severity:** major.
+- **Concerns:** F106.
+
+Two starters can both read an absent PID file. Let A write its PID, copy and re-execute the runner, pass its second lock check, and begin work while B is delayed after its initial read. B then writes its PID, overwrites A’s running script copy and starts another proof.
+
+Both can write the same logs and mutant files. Either runner’s EXIT trap also removes the other’s PID file.
+
+Separate `PROOF_DIR` values avoid even this race: each gets its own lock, although both processes use the same `tmp/mutants` paths (`tests/mutate.mjs:34`, `:435–454`).
+
+The test starts the second runner only after the first batch has begun, so it misses acquisition races (`tmp/w28/test.sh:175–186`).
+
+**Suggested fix:** use an atomic, repository-wide lock covering the shared mutant workspace. Release it only when its ownership token still matches.
+
+**X3 — A hashing failure can silently remove all file protection**
+
+- **Location:** `runner:15`, `runner:42–48`, `runner:76`.
+- **Severity:** major.
+- **Concerns:** F105; new failure in the expanded fingerprint.
+
+Put a harmless root code file named `--broken.mjs` in the tree before starting. Git lists that name without a `./` prefix. `xargs` passes it to `sha256sum` without `--`, so it is interpreted as an unknown option.
+
+The error is suppressed, the pipeline’s failure is ignored, and the following Node command succeeds. For this small repository, the fingerprint can therefore contain only the three version lines.
+
+After a completed proof, changing `index.html` and resuming can then retain the same fingerprint, skip every batch, and report CLEAN. Git enumeration failures and fingerprint-output failures are likewise not explicitly rejected.
+
+**Suggested fix:** pass `--` to `sha256sum`; explicitly reject failures in enumeration, hashing, version collection and output writing. Never accept a partial fingerprint.
+
+**X4 — Git-ignored files can still be hygiene inputs**
+
+- **Location:** `runner:43`; `tests/hygiene.test.mjs:175–192`, `:213–239`; `docs/policies/local-rules.md:8`.
+- **Severity:** major.
+- **Concerns:** F105 and F112.
+
+Suppose `.git/info/exclude` excludes `scripts/local-helper.mjs`. The runner never hashes that untracked file, but the hygiene gate scans it regardless of Git’s ignore rules. Tree mutants copy it too (`tests/mutate.mjs:444–453`).
+
+Change the helper after the hygiene batches finish, then resume. The fingerprint still matches, completed batches are accepted, and CLEAN can describe a tree whose current hygiene inputs were never judged.
+
+Settings have another mismatch: the gate skips only exact paths written in the root `.gitignore`; Git also applies wildcard, nested, local and global exclusions.
+
+The repair implements the disposition’s requested Git command, but that command does not cover every actual input as the local rule claims.
+
+**Suggested fix:** fingerprint the files the gates actually read, including relevant ignored files, or run from a complete frozen snapshot.
+
+**X5 — An edit reverted within a batch escapes every check**
+
+- **Location:** `runner:83`, `runner:107–110`, `runner:122`; `tests/mutate.mjs:465`, `:523`.
+- **Severity:** major.
+- **Concerns:** F104.
+
+After a batch’s control passes, temporarily change a gate while subsequent mutants run, then restore its original bytes before the batch ends. Each mutant reloads the gate files, but the runner observes only the matching before/after fingerprints.
+
+For example, a temporary failing assertion can supply a CHECK while other tests remain green. The batch can exit 0 and receive a marker tied to the original fingerprint, although some judgments used different tests.
+
+The local prohibition on code changes reduces this risk operationally; the runner does not detect this sequence. W28 tests persistent mid-batch changes, not changes restored before the next check (`tmp/w28/test.sh:97–110`).
+
+**Suggested fix:** execute against frozen inputs. If retaining endpoint checks, state their limitation explicitly instead of treating them as proof that inputs stayed unchanged throughout execution.
+
+**X6 — Resume can overlap a surviving child after interruption**
+
+- **Location:** `runner:32–38`, `runner:107–109`.
+- **Severity:** major.
+- **Concerns:** F106 and F112; new signal handling.
+
+If only the Bash runner is forcibly terminated, such as with SIGKILL, its trap cannot run. The mutation process can remain active. A new invocation sees a dead runner PID and immediately starts another batch, using the same mutant files and log path.
+
+For handled signals, the trap sends a signal only to `$child`, does not wait for its termination, and then releases the lock. It does not establish cleanup of the test subprocesses and browsers beneath it. A supported `NODE` wrapper that launches Node without `exec` adds another descendant the trap does not target.
+
+W28’s signal test uses a single-process stub and checks that its log stops growing for four seconds; it does not test descendant cleanup or forced termination (`tmp/w28/test.sh:289–298`). The earlier probe records a surviving child, but is not a reproduction against the final runner (`tmp/w28/probe-kill.log:1–8`).
+
+**Suggested fix:** track the owned process tree, stop and await it before releasing the lock, and refuse recovery while recorded children remain alive. On Windows, an owned Job Object is one possible mechanism.
+
+**X7 — F108’s “last ran” date remains stale**
+
+- **Location:** `AGENTS.md:88`, `AGENTS.md:92`.
+- **Severity:** minor.
+- **Concerns:** F108.
+
+Line 88 still says `npm test` last ran on **2026-10-22**. Line 92 now records its **2026-10-25**, **266.0 s** run. A reader checking whether the final code was tested receives contradictory answers.
+
+**Suggested fix:** give `npm test` its October 25 date separately from the October 22 mutant and screenshot runs.
+
+**X8 — The advertised command does not work “from anywhere in the repo”**
+
+- **Location:** `runner:3`; `tmp/w28/test.sh:240–246`.
+- **Severity:** minor.
+- **Concerns:** F106.
+
+From `tests/`, the literal advertised command tries to open `tests/docs/work/1_sentence-sequence/proof-batches.sh` and fails before root discovery runs.
+
+W28’s subdirectory test correctly uses `../$RUNNER`; it does not exercise the command printed in the header.
+
+**Suggested fix:** say the printed command runs from the repository root, while an appropriate relative or absolute script path works elsewhere.
+
+**Answers**
+
+**1. Does the runner resolve F104–F106?**
+
+Partly.
+
+The ordinary protections are substantially improved:
+
+- Catalog discovery reaches the usage error before mutation files or gates run (`tests/mutate.mjs:485–498`).
+- Startup rejects missing, duplicate, extra and blank list entries (`runner:87–94`).
+- Resume binds markers to list, input and log digests (`runner:99–102`).
+- A real red control exits 2 and stays undone; incomplete verdict output also stays undone (`runner:111–119`; `tests/mutate.mjs:515–518`).
+- Final accounting rejects survivors, errors, flags and nonzero batch statuses (`runner:124–141`). I found no ordinary parsing error in those verdict and flag formats.
+
+However, X1–X6 defeat the broader completeness, input-integrity and exclusive-execution guarantees.
+
+The supplied old folder is safely rejected: `tmp/proof-final/revision.txt:1` contains a bare hash, so `runner:29–30` exits before the PID write or self-copy. Its copied batches 00–03 each show 11 killed mutants, green controls and no flags; this establishes only the copied snapshot.
+
+For Windows handling, ordinary filenames containing spaces are preserved by the NUL-delimited hashing pipeline. A previously hashed file’s deletion changes the fingerprint, although hashing errors themselves are mishandled. Raw LF/CRLF changes also change fingerprints. **The runner has a relevant protection against checkout conversion:** `docs/work/.gitattributes:1` contains `* -text`, and the reviewed runner has LF bytes. I found no CRLF launch defect in these bytes.
+
+**2. Do W28’s 76 cases test their claims?**
+
+They are **76 assertions**, and the copied log reports all passed (`tmp/w28/test.log:357`). The recorded runner digest matches the reviewed file.
+
+The stub faithfully reproduces the formats and exit codes important to normal runner parsing: unknown-name usage, red control, verdict headings, final summary and unclean exit 1 (`tmp/w28/fixture/mutate.stub.mjs:14–56`; `tests/mutate.mjs:485–539`).
+
+Its limits matter:
+
+- It always models 48 tests; actual page-only controls have 44, and tree-only controls use the hygiene gates.
+- Flags are generated only as ERRORED, leaving KILLED-with-zero-green untested.
+- It accepts `--write-only` without implementing its real early exit, although this runner does not use that option.
+- It neither creates real mutants nor launches test subprocesses.
+- The lock test waits until acquisition is finished.
+- The “copy was not rewritten” assertion compares contents, which cannot detect rewriting identical bytes (`tmp/w28/test.sh:178–181`).
+- The signal test observes log growth, not process-tree termination.
+- Tests omit X1, X3–X5, simultaneous acquisition, separate proof directories, PID reuse, filesystem failures, and interrupted setup/publication.
+
+The tests provide useful evidence for the paths they cover, not for the omitted guarantees.
+
+**3. Do the local rule and documentation repairs hold?**
+
+The local rule accurately describes default batching, the exit-0-plus-CLEAN requirement and rerunning unclean batches (`docs/policies/local-rules.md:6–11`). Its “every input” claim and safe-resume implication exceed the implementation, as X4 and X6 explain.
+
+I found no further problem in these requested corrections:
+
+- **F107:** historical `:597` is distinguished from current `:602` and `:609` (`docs/gates.md:158`; `tests/sequence.test.mjs:602–609`).
+- **F109:** sampled views, residual tolerance and identity exceptions are stated in the repaired summaries (`AGENTS.md:113–117`; `plan.md:208–209`).
+- **F110–F111:** the lesson link and proof-audit warning are repaired (`docs/gates.md:139`; `AGENTS.md:105`, `:111`).
+- **F112:** the plan distinguishes the browser crash from session termination and requires clean batches (`plan.md:213–215`).
+- **F113:** “seamless” now distinguishes the camera path from a recorded video loop (`plan.md:73`; `README.md:19`).
+- **F114:** the last-hold retry matches the code; the count, history and repair-round corrections match the review record (`docs/gates.md:151`; `tests/sequence.test.mjs:306–320`; `plan.md:184`, `:216–220`; `reviews/3_integration.md:536`, `:570`).
+
+F108 remains incomplete as X7 describes. Historical numerical claims were checked against the supplied records; the original measurement logs were unavailable.
+
+**Read outside the diff**
+
+- `tests/mutate.mjs:1–85`, catalog declarations through `:420`, and `:421–539`.
+- `tests/hygiene.test.mjs:1–50`, `:160–242`.
+- `tests/lib/harness.mjs:1–160`.
+- `tests/sequence.test.mjs:275–322`, `:598–627`.
+- `docs/work/.gitattributes:1`; `README.md:1–25`; `AGENTS.md:88`.
+- `tmp/w28/test.sh:1–302`, `fixture/mutate.stub.mjs:1–56`, `test.log:1–357`, and both probe files.
+- The supplied old runner, manifest, fingerprint, revision, runner log, and batches 00–03’s verdicts, summaries and markers.
+
+#### Claude (`claude-opus-5-5[1m]`, effort max), 2026-10-26
+
+Redacted: nothing. The report is the `result` field of the run's final event, unchanged.
+
+**Summary**
+
+- 6 findings: 1 major (C1) and 5 minor (C2–C6).
+- **The runner (`70f4ebb`) does what the repair column says for F104, F105 and F106.** I found no sequence of runs, session ends, signals, file or folder changes that makes it write CLEAN or exit 0 in any of these cases:
+  - a mutant was skipped or judged twice;
+  - a batch's control was red;
+  - an input it hashes changed and was still changed at the next check.
+- It refuses the running proof's folder before it writes anything.
+- **The main gap is in the docs about the proof that is running now.** The plan says it runs with `proof-batches.sh`, and the new rule's command is how to resume it. But that proof is 7616e58's runner, which has none of the new checks, and the new command refuses its folder.
+- The other gaps are smaller:
+  - the lock covers one folder only;
+  - a few claims say more than the code does;
+  - one F108 date is still stale;
+  - on this machine, `git restore` does not give back the exact bytes the runner hashed.
+- The docs fixes for F107, F109–F111, F113 and F114 hold. F108 is only partly fixed.
+
+**How I checked**
+
+- **Read in full or in the relevant ranges:**
+  - the round 4 record;
+  - the runner at `70f4ebb`, and at `7616e58` via `git show`;
+  - `tests/mutate.mjs`, `tests/hygiene.test.mjs` and `tests/sequence.test.mjs`;
+  - `.gitignore`, `package.json`, `docs/work/.gitattributes` and `docs/work/registry.json`;
+  - the local rules, `AGENTS.md`, `docs/gates.md` and the plan;
+  - every file in `tmp/w28/` and `tmp/proof-final/`.
+- **Git checks:**
+  - `git grep` at `df0dac7` and `560ac55` for F107's line numbers;
+  - `git cat-file -s` for the plan's KB figures;
+  - commit times with `git log`.
+- No subagents. I ran no tests, no node and no browser.
+- **Could not check:**
+  - The sha256 `df44c275…` of the tested bytes, since I have no hashing tool. `test.log:1` names a 141-line file, `70f4ebb`'s file has 141 lines, and the test ended at 16:26:39, three minutes before the commit at 16:29:51.
+  - How a session end kills processes here, that is, whether node outlives bash.
+  - R3's log, since `tmp/w25` is not in this clone.
+  - `tmp/w28/fixture/names.txt`, which `test.sh` reads but which is not in the evidence copy.
+
+**Findings**
+
+**C1 — major — the tracked docs misdescribe the running proof, and the rule's command cannot resume it** (new; concerns F104 and F112)
+- **Where:** `docs/work/1_sentence-sequence/plan.md:213–215`, `docs/policies/local-rules.md:7`, `:9` and `:10`, and `proof-batches.sh:29–30`.
+- **The running proof** is 7616e58's code, in `tmp/proof-final/run-batches.sh:6–33`, now at batch-04 of 00–11 (`runner.log:13`). Its checks are much weaker than the new runner's:
+  - it hashes tracked files under 5 paths, and only before each batch (`run-batches.sh:13–17`);
+  - it marks exit-1 batches done (`:26–27`);
+  - it has no check after the last batch and no lock;
+  - it writes `all.done` as "all done <date>", with no CLEAN, and exits 0 even with errored batches (`:33`).
+- **Where the docs go wrong:**
+  - `plan.md:215` says it runs with `proof-batches.sh`, which now names the repaired runner.
+  - `local-rules.md:7` says "the same command resumes it", but that command refuses this folder: `revision.txt:1` is a bare SHA. The refusal says "move it aside for a fresh proof", and `local-rules.md:10` agrees.
+  - The working resume, `bash tmp/proof-final/run-batches.sh`, is written nowhere in the tracked docs.
+  - F104's hand checks are only in the record (`4_integration.md:403`), not in the plan's todo.
+  - `local-rules.md:9` ("all.done says CLEAN") can never hold for this proof.
+- **Scenario:** a session end during batch 5–11, as happened three times (`plan.md:214`). The next session follows the rule, gets exit 4 and moves the folder aside, throwing away 5–11 finished batches of 51–55 minutes each (`runner.log:6–12`). If instead it runs the old copy while the old runner still lives (the 2026-10-25 run was a hidden process), there is no lock, so batch-04 runs twice. At the end, a reader of `plan.md:215` assumes the new runner's final rehash and checks also covered this proof.
+- **Fix:**
+  - At `plan.md:213–215`, name 7616e58's copy and its resume command, with "only after checking that no runner or `tests/mutate.mjs` is still running".
+  - Add F104's hand checks to the plan's todo.
+  - In the rule, say that its command and its CLEAN test apply to proofs started by `70f4ebb`'s runner, and that an old folder is moved aside only once its runner has stopped.
+
+**C2 — minor — the lock covers one folder and the runner's bash process only** (F106)
+- **Where:** `proof-batches.sh:29–38`, `:107` and `:14`.
+- **(a) Other folders are not covered.** A proof in another `PROOF_DIR` (`:14` says it can be set), or beside the old-runner proof, is not refused. Both proofs share `tmp/mutants/` (`mutate.mjs:34`) and the CPU, and load turns the timing lines in `gates.md:150–159` into CHECKs that count as kills.
+  - Scenario: refused by `tmp/proof-final`, a session runs `PROOF_DIR=tmp/proof-new bash …proof-batches.sh` during the old proof's batch 5, and two mutation runs go at once.
+- **(b) A surviving `mutate.mjs` is not covered.** If bash ends without its trap (taskkill or TerminateProcess on bash.exe, or `kill -9`), node can outlive it. Windows does not end children with their parent, and W28's probe showed this here with the older design (`probe-kill.log:4`). The next run sees a dead PID, reruns that batch and truncates its log (`:107`) while the orphan still writes to it and drives its browsers. Usually this ends in exit 6 (a verdict twice or missing). But the doubled load can also produce timing kills that pass every check.
+- **(c) The folder check (`:29`) comes before the lock (`:32`).** A runner started during another runner's setup gets exit 4 and "its setup broke off; move it aside". Following that advice would break the setup in progress.
+- **Fix:** one lock for the whole repo (for example `$ROOT/tmp/mutation.lock`) holding both the runner's PID and the child's Windows PID (`/proc/$child/winpid`), refused while either is alive, and checked before the folder.
+
+**C3 — minor — "every input but Markdown" says more than the fingerprint** (F105)
+- **Where:** `local-rules.md:8`, and `proof-batches.sh:6–7` and `:40–44`.
+- **What the fingerprint leaves out:**
+  - Ignored code files that the hygiene gate still scans. The `.gitignore` patterns `tmp/`, `test-results/` and `playwright-report/` have no leading slash, so they match at any depth. Hygiene walks all of `scripts/` and `tests/`, skipping only `node_modules` (`hygiene.test.mjs:175–183`). `TREE_SKIP` drops only root-level names (`mutate.mjs:444–448`). So a file like `tests/tmp/x.mjs` is scanned but never hashed.
+  - Files under ignored paths that a command names (`hygiene.test.mjs:213–226`).
+  - `node_modules` beyond the two version strings, and the Chromium build.
+- **Effect:** I found no way for these to change a verdict. A violating file turns a tree batch's control red (exit 2), so this fails safe.
+- **Fix:** reword the claim to what the code hashes, or also hash `git ls-files -oi --exclude-standard -- scripts tests`.
+
+**C4 — minor — `AGENTS.md:88` still says `npm test` last ran on 2026-10-22** (F108, partly unresolved)
+- `:92` (from `a6efa30`) now cites "the run of 2026-10-25, on the final code, 266.0 s", so the section contradicts itself. The R3-touched mutants also ran again on 2026-10-26 (`batch-00.log:19`).
+- **Fix:** update the date at `:88`.
+
+**C5 — minor — CLEAN leaves out the timing-line audit** (new; F98–F100 and F111)
+- **Where:** `proof-batches.sh:130–137` and `local-rules.md:9`, against `plan.md:213` and `AGENTS.md:105`.
+- **Scenario:** a mutant killed only at `tests/sequence.test.mjs:283` on a loaded machine still counts. A session reads "CLEAN" and the rule, and reports the proof clean without the plan's audit.
+- **Fix:** add one line to `all.done` and the rule: "then audit kills printed only at the timing lines in `docs/gates.md`".
+
+**C6 — minor — "reverted byte for byte" is not what `git restore` gives on this machine** (new)
+- **Where:** `proof-batches.sh:51` and `local-rules.md:8`.
+- The primary checkout has LF working files under a global `core.autocrlf=true` (`4_integration.md:11`). There is no root `.gitattributes`; only `docs/work/` has `* -text`, which keeps the runner itself LF.
+- **Scenario:** a session edits `tests/x.mjs` by mistake and runs `git restore` on it. Git writes CRLF, the check still reports the file, and the session moves the proof aside, losing every finished batch.
+- **Fix:** name a byte-exact restore in the ABORTED text, for example `git -c core.autocrlf=false checkout -- <file>`.
+
+**Answers**
+
+1. **The runner resolves F104–F106 as the record says.**
+   - **F104:**
+     - checks at start (`:83`), after each batch (`:110`) and before `all.done` (`:122`);
+     - markers hold the digests of the list, the inputs and the log (`:101–102`, `:118`);
+     - the catalog must match `names.txt` and the lists, each name once (`:87–94`);
+     - one verdict per name, per batch and across all logs (`:112`, `:124`).
+   - **F105:** the fingerprint is at `:43–44`.
+   - **F106:** empty lists are refused (`:90–92`, `:105`); the lock is at `:32–36`; the self-copy and `exec` at `:37`; setup at `:68–81`.
+   - **The header's claims hold**, with the limits in C2 and C3.
+   - **A red control cannot pass.** It means exit 2 and no `control green (` line (`mutate.mjs:515–518`, `:538`).
+   - **The final tally parses the real output.** The verdict-line format matches the real log (`batch-00.log:15–65`), and FLAG is on the same line (`mutate.mjs:527–528`).
+   - **The catalog read has no side effects.** `mutate.mjs` checks the names (`:494`) before `mkdirSync` (`:498`).
+   - **The fingerprint handles the awkward cases:**
+     - a deleted tracked file stays listed by `--cached` and drops its hash line, so the check sees it;
+     - spaces in file names are handled by `-z` and `-0`;
+     - a CRLF rewrite counts as a change, which fails safe (but see C6);
+     - Markdown is outside the file types the gates read (`hygiene.test.mjs:6–8`).
+   - **Not seen by design:** a change made and reverted within one batch. The docs name the check points correctly.
+   - **Disturbance:** it refuses foreign folders before writing (`test.sh:230–238`) and never rewrites a running copy (test 11). The exceptions are C1 and C2.
+2. **W28's tests: the 76 cases test what their names say.**
+   - The stub's usage text, control line, verdict lines, summary and exit codes match `mutate.mjs:485–539` (stub lines 14–56). One small mismatch: case 3's "between batches" is really between runs.
+   - **Untested paths:**
+     - a mutant both killed and flagged: the stub flags only errored ones, so the second branch of `:128–129` never ran;
+     - a signal with real gate children and browsers: case 23's stub starts none;
+     - bash ending without its trap while node lives on;
+     - two proof folders at once, or a second runner during setup;
+     - PID reuse;
+     - deleted tracked files, names with spaces, CRLF rewrites and ignored inputs;
+     - a change of Node version;
+     - `cp` or `mv` failures;
+     - the real live folder (case 16b is a mock).
+3. **The local rule and the docs.**
+   - **The local rule matches the runner** except for C1, C3 and C5.
+   - **F107 holds.** `df0dac7:tests/sequence.test.mjs:597` is the `Promise.all` that encloses the wait at `:604`; at `70f4ebb` they are at `:602` and `:609`.
+   - **F109 holds.** `AGENTS.md:113` and `:117` agree with `gates.md:12`, `:29`, `:37` and `:93`.
+   - **F110 holds.** The link at `gates.md:139` resolves.
+   - **F111 holds** (`AGENTS.md:105` and `:111`). A nit: `gates.md:5` keeps the old, narrower "read this before…" list.
+   - **F113 holds** (`plan.md:73`, consistent with `:175`).
+   - **F114 holds:**
+     - `gates.md:151` agrees with `sequence.test.mjs:135–136`, `:306–323` and `:409`;
+     - `plan.md:184` and `:216–218` are right, including 84,460 and 29,450 bytes;
+     - `3_integration.md:536` is right.
+   - **F108 is only partly fixed** (C4).
+   - **F112's plan text is right** (`plan.md:214`), but see C1.
+
+**Read outside the diff**
+
+- `tests/mutate.mjs:1–40`, `:334–345`, `:400–540`
+- `tests/hygiene.test.mjs:1–60`, `:150–250`
+- `tests/sequence.test.mjs:135–136`, `:250–330`, `:409`, `:594–629`
+- `docs/gates.md:1–60`, `:84–163`
+- `AGENTS.md:84–119`
+- `plan.md:160–234`
+- `reviews/4_integration.md` (all of it)
+- `.gitignore`, `package.json`, `docs/work/.gitattributes`, `docs/work/registry.json`
+- `7616e58:docs/work/1_sentence-sequence/proof-batches.sh`
+- `df0dac7` and `560ac55:tests/sequence.test.mjs` (by `git grep`)
+- every file in `tmp/proof-final/` and `tmp/w28/`
+
+### Findings and disposition
+
+Both lanes agree that the docs fixes for F107 and F109–F114 hold and that F108's date was still stale. They differ on the runner: Claude found that it does what F104–F106's repair column says, within limits it rates minor; Codex rates the same limits major, since each lets the runner report CLEAN, or run beside another proof, in a case its header says it rules out. The table keeps both.
+
+| ID | Finding | Disposition and reason | Repair or follow-up |
+|---|---|---|---|
+| F115 | Codex X1 (major): a coordinated edit of `names.txt` and a later list, both ignored files, shrinks the proof to 131 mutants and still ends CLEAN, since the final check compares the verdicts with `names.txt`, not the catalog. | Accepted. | Second runner repair (W28): the final check also compares the verdicts with the catalog. |
+| F116 | Codex X2, X6 (major) and Claude C2 (minor): the pid-file lock is not atomic and covers one folder; a runner that dies without its trap leaves `mutate.mjs` and its browsers running beside a resume; the trap stops only the child, without waiting; and the folder check comes before the lock, so a runner started during another's setup is told to move it aside. | Accepted. | W28: one atomic lock for the repo, taken first, holding the runner's and the child's Windows pids and refused while either lives; on a signal the child's process tree is ended and awaited. |
+| F117 | Codex X3, X4, X5 (major) and Claude C3 (minor): the fingerprint can fail silently (a file named `--x.mjs`, no `--`, errors suppressed, no pipefail), misses ignored files that the hygiene gate still scans, and cannot see an edit made and reverted within a batch. | Accepted. This is the second review to find the runner short of frozen inputs, for one reason: it checks a live tree that may change. So, by R11's reassessment, the runner no longer checks the checkout: it proves a frozen snapshot of the commit. | W28: the proof runs on `git archive HEAD`, extracted under the proof folder with its own copy of Playwright; the fingerprint is that snapshot's files, hashed with `--` under pipefail and failing loudly; an edit reverted within a batch is then unseen only in the snapshot. |
+| F118 | Claude C1 (major): the docs named the new runner for the proof that is running, though it runs `7616e58`'s copy, which the new runner refuses. Nothing tracked said how to resume it, and the rule's advice could lead a session to move its folder aside and lose its finished batches. | Accepted. | Fixed in `50f0fea`: the plan gives the resume command and the hand checks that the old runner needs after its last batch, and the rule says never to move aside a folder whose proof should resume. |
+| F119 | Codex X7 and Claude C4 (minor): AGENTS.md's last-ran date for `npm test` was still 2026-10-22 (F108). | Accepted. | Fixed in `50f0fea`. |
+| F120 | Codex X8 (minor): the header's command fails from a subdirectory. | Accepted. | W28: the header gives the command for the repo root, or the script's path from anywhere. |
+| F121 | Claude C5 (minor): CLEAN does not say that kills printed at the timing lines still need their audit (F98–F100). | Accepted. | W28: a line in `all.done`; the rule says so too. |
+| F122 | Claude C6 (minor): with `core.autocrlf=true`, `git restore` writes CRLF, so "reverted byte for byte" cannot be done on this machine. | Accepted. With the snapshot the checkout is no longer an input, so nothing there needs reverting. | W28: the abort message says what to do when the snapshot or the toolchain changed. |
+| — | Claude (nit): `docs/gates.md:5` kept the older "read this before" list. | Accepted. | Fixed: it now matches AGENTS.md's pointer. |

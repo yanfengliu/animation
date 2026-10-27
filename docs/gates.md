@@ -2,7 +2,7 @@
 
 The detail behind the "Gates" section of [AGENTS.md](../AGENTS.md): what each test file proves, with the measured margins between the page and its mutants, and every bound. AGENTS.md lists the commands and how to run them, and each test file's header states its exact bound.
 
-Read this before changing a test, a threshold, a mutant or how the page draws, and update it in the same commit as the change.
+Read this before changing the page or a gate and before judging a mutation run, and update it in the same commit as the change.
 
 What the suite proves (each file's header states its exact bound):
 
