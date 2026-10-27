@@ -85,7 +85,7 @@ Obtain independent, preferably read-only review for substantial or high-risk cha
 
 ## Gates
 
-Node 24 (`.nvmrc`). Each command below was run on Windows 11 with Node 24.18.1 on 2026-10-11. `npm test`, the mutants R3 added or touched, and the `seq` and `between` shoot presets last ran on 2026-10-22, after R3.
+Node 24 (`.nvmrc`). Each command below was run on Windows 11 with Node 24.18.1 on 2026-10-11. `npm test` last ran on 2026-10-25, on the final code; the mutants R3 added or touched and the `seq` and `between` shoot presets last ran on 2026-10-22, after R3.
 
 - `npm ci` installs the one dev dependency, Playwright 1.63.0 (pinned). It installs no browser, because neither `playwright` nor `playwright-core` has an install script.
 - `npx playwright install chromium` then puts that version's Chromium (153.0.8010.12) in the local Playwright cache. When the build is already there it reuses it and downloads nothing (2 s here). The gates use only that cache; nothing downloads at test time.
