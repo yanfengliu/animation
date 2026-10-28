@@ -1,9 +1,9 @@
 # Hidden sentence sequence for capture
 
-Status: active
+Status: done
 Owner: Claude coordinator session
 Created: 2026-10-15
-Updated: 2026-10-26
+Updated: 2026-10-28
 
 ## Problem and outcome
 
@@ -66,14 +66,14 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
 
 ## Acceptance criteria
 
-- [ ] From each of the six viewpoints its message is clearly legible at 1280×800 and 390×844, from particle positions alone. Checked by the coordinator at native resolution, and by per-message contrast gates.
-- [ ] Every particle renders alike at every angle, the six viewpoints included (owner directive, 2026-10-11). Checked by the existing alike gates extended to every viewpoint.
-- [ ] Away from the viewpoints (midway between neighbours, and at far angles) no message is legible. Honest smears near each viewpoint are expected. Checked by screenshots and by gates.
-- [ ] The tour at load visits hello world, the face, "What", "a", "beautiful" and "world" in that order, holding exactly at each viewpoint. Play replays it, input stops it, and reduced motion is respected. Checked through real input.
-- [ ] `#capture` shows no UI chrome and loops the sequence seamlessly; only Escape interrupts it. Checked by gates and by looking. "Seamlessly" means the camera's path repeats without a break; one recorded pass, played as a video loop, still jumps where it starts again, since the particles' drift does not repeat with the pass (F72, which the owner skipped on 2026-10-26).
-- [ ] The page stays smooth on an ordinary laptop. The particle count and sprite fill are kept within a stated budget, because headless runs cannot measure real-GPU frame rate.
-- [ ] `npm test` is green and the full mutation proof kills every mutant, including new ones for the per-message gates, the sequence and capture.
-- [ ] An independent review ran and its material findings are resolved. The work is on `main` and pushed, and the artifact is republished.
+- [x] From each of the six viewpoints its message is clearly legible at 1280×800 and 390×844, from particle positions alone. Checked by the coordinator at native resolution, and by per-message contrast gates. Evidence: the coordinator's pass over `8dc6893`'s page, whose 27 acceptance digests every later page change left unchanged, and the illusion gates: at each eye the strokes are at least 1.5× brighter than the gaps (1.55–2.08 for seeds 1–12), and relocation lifts that at least 1.51× over `beta=0` (`docs/gates.md`).
+- [x] Every particle renders alike at every angle, the six viewpoints included (owner directive, 2026-10-11). Checked by the existing alike gates extended to every viewpoint. Evidence: at E, near E, three far views and the other five eyes, text particles carry the light (0.93–1.05), colour balance (within 3%) and size (within 15%) of the same particles drawn as ambient; at each eye its own message's particles stay within 0.95–1.12 and the scene's light within 0.95–1.03 of the midpoints beside it; and the shipped render matches its test-only layers within a 0.1% residual (0.0013% at most). No review round found the page breaking the rule.
+- [x] Away from the viewpoints (midway between neighbours, and at far angles) no message is legible. Honest smears near each viewpoint are expected. Checked by screenshots and by gates. Evidence: the hiding gate at the other eyes, the midpoints, the antipodes and the far views (relocation lifts a message's ghost at most 1.33×; 1.297 at most measured), and the coordinator's 23 views away from the eyes. Near each antipode a message forms a mirrored ghost, not legible and off the capture path.
+- [x] The tour at load visits hello world, the face, "What", "a", "beautiful" and "world" in that order, holding exactly at each viewpoint. Play replays it, input stops it, and reduced motion is respected. Checked through real input. Evidence: `tests/sequence.test.mjs` checks the camera's path from a log of every frame under real input, and its pictures at the holds and landings match each eye set by URL (0 differing channel values); `tests/motion.test.mjs` covers the tour stopping on input and reduced motion, also when it is switched on mid-move.
+- [x] `#capture` shows no UI chrome and loops the sequence seamlessly; only Escape interrupts it. Checked by gates and by looking. "Seamlessly" means the camera's path repeats without a break; one recorded pass, played as a video loop, still jumps where it starts again, since the particles' drift does not repeat with the pass (F72, which the owner skipped on 2026-10-26). Evidence: `tests/sequence.test.mjs` runs capture mode through real input: the chrome, cursor and focus outline hidden, the loop's path, its six holds pictured, only Escape ending it, and Escape dropping the anchor; and the coordinator saw every hold legible under the live clock.
+- [x] The page stays smooth on an ordinary laptop. The particle count and sprite fill are kept within a stated budget, because headless runs cannot measure real-GPU frame rate. Evidence: the budget gate in `tests/page.test.mjs`: at most 48,000 particles a frame, and sprites covering at most 3× the screen at 1920×1080 and DPR 2 (2.72–2.95× measured). The frame rate on a real GPU is not measured, as the criterion foresees, and fully zoomed in the sprites cover about 13.6× the screen, which no gate bounds.
+- [x] `npm test` is green and the full mutation proof kills every mutant, including new ones for the per-message gates, the sequence and capture. Evidence: `npm test` passed 48 of 48 on `93af0c9` (241.8 s), and the full proof, in 12 batches of 11 each after a green control, killed 132 of 132 mutants (109 page, 23 tree), none errored or flagged, with no kill resting on a timing miss alone (Outcome).
+- [x] An independent review ran and its material findings are resolved. The work is on `main` and pushed, and the artifact is republished. Evidence: review rounds 0–4 with both pinned lanes (F49–F136, in `reviews/`), each finding repaired or, after the canon's reassessment, stated as a bound in `docs/gates.md` or the runner's header; `main` is pushed with the closing commit; the artifact is version 4, which holds `df0dac7`'s `index.html`, unchanged since.
 
 ## Implementation steps
 
@@ -139,7 +139,7 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
   - Criterion 5, by looking: in `#capture` the controls, readout, hint and cursor are hidden (computed styles).
     - Every hold reads under the live clock: hello world `10acbdb6`, face `9ea94ab7`, "What" `5b59fb74`, "a" `103f1451`, "beautiful" `a6bb55ea`, "world" `fb1746d7`.
     - The wrap glide shows a plain cloud (`7107e6a1`), and the loop is back at hello world after 44.2 s (`32857511`).
-- [ ] Repair round 1, one worker at a time. Each milestone ends with three green runs, its new and touched mutants killed by name, and its own commit.
+- [x] Repair round 1, one worker at a time. Each milestone ends with three green runs, its new and touched mutants killed by name, and its own commit.
   - [x] R1a, W19: F49, F50, F55–F59 and F61 (sequence, capture mode, page), committed as `2748bef` on 2026-10-22, on top of the owner's canon sync `850af3b`.
     - `npm test`: 45 of 45 in three runs (153.6–158.9 s).
     - 14 named mutants, 10 of them new: all killed by checks after a green control (2,532 s).
@@ -178,7 +178,7 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
 - [x] Review round 1 of repair round 1 (`8dc6893..6adc5b8`), both lanes on a clone of `6adc5b8`, 2026-10-22. Dispositions are in [reviews/1_integration.md](reviews/1_integration.md).
   - 2 major and 8 minor findings, F77–F86. None is against the owner's rule; both lanes found the rendering ties intact.
   - The full proof of `6adc5b8` was stopped after 17 of 116 mutants (all killed, control green), so that repair round 2 could run first.
-- [ ] Repair round 2, one worker at a time:
+- [x] Repair round 2, one worker at a time:
   - [x] R2a, W23: F78–F81, F83, and F86's sequence checks, committed as `b3c5f9b` on 2026-10-22, on top of the owner's canon sync `d14b771`.
     - `npm test`: 48 of 48 in three runs (215.0–217.9 s).
     - 26 named mutant runs, of 24 mutants (11 of them new; 2 ran again): all killed by checks after green controls (5,631 s and 640 s).
@@ -210,11 +210,15 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
 - [x] Review round 3 of repair round 3 (`8560485..df0dac7`), both lanes on a clone of `df0dac7`, 2026-10-22. Dispositions are in [reviews/3_integration.md](reviews/3_integration.md).
   - Eight findings, F96–F103, none against the owner's rule. Codex rates two major, Claude rates all minor.
   - They repeat four classes that rounds 1–3 each found again after repairs. So, by fleet R11's reassessment, gate behaviour is not repaired further: F96–F102 become stated bounds, and F103's doc claims are corrected. The owner can ask for another round; repair rounds used: 3 of 5.
-- [ ] Full mutation proof of the final code. It is clean only if every batch exited 0, with every mutant killed and none errored or flagged; a batch with errored or flagged mutants runs again. Then an audit of its kills for any mutant that only a timing line kills (F98–F100).
+- [x] Full mutation proof of the final code. It is clean only if every batch exited 0, with every mutant killed and none errored or flagged; a batch with errored or flagged mutants runs again. Then an audit of its kills for any mutant that only a timing line kills (F98–F100).
   - It did not finish three times. On `df0dac7` on 2026-10-22, a session end stopped it after 1 mutant; in the restarted run the browsers crashed at the 27th mutant, about two hours in, and the other 106 errored, 105 of them with 0 green tests, though the process ran on to its summary. On `560ac55` on 2026-10-25, a session end stopped it where it ran as a separate hidden process.
-  - Since 2026-10-26 12:46 it runs on `560ac55` in 12 resumable batches of 11 named mutants, as the only browser workload. It runs `7616e58`'s runner, from its copy `tmp/proof-final/run-batches.sh`, which the later runner (`70f4ebb` and after) refuses to touch.
-  - To resume it after a session end, first check that no runner and no `tests/mutate.mjs` is still running, then run `NODE=/c/Users/38909/.nvm/versions/node/v24.18.1/bin/node bash tmp/proof-final/run-batches.sh`; it skips the batches with a `.done`. Never move its folder aside.
-  - That runner checks less than the later one, so the coordinator checks by hand after its last batch (F104, F105): every batch log has a green control and one verdict per name, with 132 names in all, each once; every mutant is killed and none errored or flagged; and no file the gates read changed while it ran. Since `560ac55` only Markdown and `proof-batches.sh` changed in commits, and the gates read neither; there are no root code files and no `.claude/settings*.json`, `.gitignore` last changed on 2026-10-10, and the only untracked file is Markdown. The coordinator hashed every file but Markdown, plus Node and Playwright, at batch 5 (`tmp/proof-final-audit/`), and hashes them again after the last batch.
+  - From 2026-10-26 12:46 to 2026-10-28 01:34 it ran on `560ac55` in 12 resumable batches of 11 named mutants, as the only browser workload, with `7616e58`'s runner from its copy `tmp/proof-final/run-batches.sh`, which the later runner (`70f4ebb` and after) refuses to touch.
+  - Batch 6's control errored once, while another project's Playwright tests ran, and restarts of the computer stopped batches 9 and 10. Each was resumed with `NODE=/c/Users/38909/.nvm/versions/node/v24.18.1/bin/node bash tmp/proof-final/run-batches.sh`, which skips the batches with a `.done`, once no runner or `tests/mutate.mjs` was alive; after each restart the gate inputs were hashed again and matched.
+  - Result: every batch exited 0 after a green control (the 44 page-gate tests, the 4 hygiene tests, or both), and 132 of 132 mutants were killed, 0 survived, 0 errored and 0 flagged: 8.7 hours of batches (31,450 s), about 264 s per page mutant (220–312 s).
+  - That runner checks less than the later one, so the coordinator checked by hand after its last batch (F104, F105):
+    - the 132 verdicts are the catalog's names, once each, and the 12 lists hold each name once;
+    - every kill rests on at least one check that is not a timing miss. 20 kills print a check at a timing line: 13 of them also fail other checks of the page's behaviour, and the other 7 fail there on the picture itself (11–16% of its light off in each channel, where 0.1% is allowed), not on timing;
+    - no file the gates read changed. The runner's 16 hashed files matched before each batch. The coordinator's wider list (every tracked file but Markdown, Node and Playwright, and every file under `scripts/` and `tests/`), taken during batch 5, matched at both resumes and after the last batch, but for the runner itself, which the gates do not read. Since `560ac55` only Markdown and `proof-batches.sh` changed in commits; there are no root code files and no `.claude/settings*.json`, `.gitignore` last changed on 2026-10-10, and the only untracked file is Markdown.
 - [x] Docs pass for F96–F103 in AGENTS.md and the defect register, W26, committed as `daaffcc` on 2026-10-22: the bounds, the corrected claims, and a note that kills printed at the timing lines may be timing misses. That AGENTS.md text is now in `docs/gates.md`.
 - [x] The test-file comment fixes, committed as `560ac55` on 2026-10-25, before the final proof rather than after it, since the proof had to start again anyway and could then run on the final bytes. With comments stripped, the test code is line for line unchanged; only the defect text of `hold-names-next-early` changed. `npm test`: 48 of 48 (266.0 s).
 - [x] AGENTS.md condensed from 84.5 KB: W27 moved its repair history to the R1a–R2b notes above and to the review records (`f857227`, 2026-10-25), and the coordinator moved what the suite proves, with every bound, verbatim to `docs/gates.md` (`b7d3130`, 2026-10-26), leaving 29.5 KB.
@@ -225,11 +229,38 @@ Relocation moves a particle sideways by about σ only, so from any other eye it 
   - As the second re-review's outcome set, the runner is not repaired again: its header states F132–F136 and the reports' other limits as bounds, in a comment-only change. These were the work unit's fourth to sixth repair rounds, past the canon's cap of five, which the owner's "Carry on until it's all done" (2026-10-26) covers.
   - The runner's process scan has never run on this machine's processes: the permission classifier refused its query twice when W28 ran it on its own, so W28 tested it on a made-up process table.
 - [x] Artifact republished as version 4 (version id `1792722001-a3c9`) at https://claude.ai/artifact/DXryp6rehkTohF7Eumat5f on 2026-10-22. It holds `df0dac7`'s `index.html` with the document wrapper stripped (9 lines), and is private until the owner shares it.
-- [ ] The devlog, the Outcome with each acceptance criterion checked, and cleanup.
+- [x] The devlog, the Outcome with each acceptance criterion checked, and cleanup.
+  - `npm test`: 48 of 48 on `93af0c9`, 241.8 s (2026-10-28), run alone after the proof.
+  - Cleanup: the owner asked on 2026-10-26 that `tmp/` go to the Recycle Bin once all is done; that follows this commit.
 
 ## Outcome
 
-Pending.
+**What shipped.** `index.html`, unchanged since `df0dac7`, on `main` and pushed, and published privately at https://claude.ai/artifact/DXryp6rehkTohF7Eumat5f (version 4).
+- One cloud of 48,000 equally lit particles hides six messages, with 30,254 of the particles on their strokes: "hello world" at (38°, 14°), a smiling face at (98°, 18°), "What" at (158°, 16°), "a" at (218°, 20°), "beautiful" at (278°, 16°) and "world" at (338°, 18°). Each reads only from its own eye.
+- A tour at load glides to each eye in order and holds there 3 s. Play replays it, "Find the angle" glides to the next message, and `#capture` loops the sequence with no controls and no cursor until Escape.
+- Every particle renders alike at every angle (owner directive).
+
+**Verified revision.** The final gate code is `560ac55`. The commits after it change only Markdown and the proof runner, which the gates do not read.
+- `npm test`: 48 of 48 on `93af0c9`, 241.8 s on 2026-10-28, run alone after the proof.
+- The full mutation proof of `560ac55`, in 12 resumable batches of 11 with `7616e58`'s runner: every batch's control was green (the 44 page-gate tests, the 4 hygiene tests, or both), and 132 of 132 mutants were killed, 0 survived, 0 errored and 0 flagged. It took 8.7 hours of batches between 2026-10-26 12:46 and 2026-10-28 01:34; one batch ran again after its control errored, and restarts of the computer stopped two others.
+- The coordinator's audit: the 132 verdicts are the catalog's names, once each, and every kill rests on at least one check that is not a timing miss (the proof step above says how the 20 kills that print a check at a timing line are made).
+- The 16 gate inputs the runner hashed at the proof's start matched before each batch. The coordinator's wider hash list, every tracked file but Markdown plus Node and Playwright and every file under `scripts/` and `tests/`, taken during batch 5, matched at both resumes and after the last batch, but for the runner itself.
+- No dependency changed in this work unit (Playwright 1.63.0 since 2026-10-11), so `npm audit` did not run again.
+
+**Coordinator visual acceptance.** On `8dc6893`'s page, 2026-10-21 (above): every message legible at its eye at 1280×800 and 390×844, none legible in the 23 views away from the eyes, and every capture hold legible under the live clock. Every later page change left the 27 acceptance digests unchanged (R1a–R3).
+
+**Review coverage.** Review rounds 0–4, each with both pinned lanes (Codex `gpt-6-astra` at xhigh, Claude `claude-opus-5-5[1m]` at max), read-only, recorded in `reviews/`: F49–F136. Every lane read a clone but round 0's Codex lane, which read the working tree, with its target files hashed the same before and after.
+- No round found the page breaking the owner's rule.
+- Repair rounds R1–R3 repaired the gates. After round 3 the same four classes kept coming back, so by the canon's reassessment F96–F102 became stated bounds in `docs/gates.md`.
+- Round 4's major findings were in the batched proof runner. W28 repaired it three times, each repair reviewed again by both lanes, and the gaps of the last are stated in its header (F132–F136). The proof above ran on the older runner, with the coordinator's checks by hand (F104, F105).
+
+**Known limits, open and reported to the owner.**
+- Gate bounds: every one is in `docs/gates.md`, including the timing lines whose kills may be timing misses (F98–F100).
+- Not tested: the frame rate on a real GPU, other browsers and a screen reader. Fully zoomed in, sprites cover about 13.6× the screen, which no gate bounds; capture mode never zooms.
+- Near its antipode each message's own particles form a bright mirrored ghost, not legible and off the capture path; `MAX_GHOST_LIFT` holds them near today's level.
+- One recorded pass, played as a video loop, jumps where it starts again (F72, which the owner skipped).
+- β stays 0.85 by decision, since nothing in the gates holds it (`docs/learning/lessons.md`).
+- The proof runner's process scan has never run on this machine's processes; its bounds are in its header.
 
 ## Handoff, 2026-10-21: coordinator rollover
 

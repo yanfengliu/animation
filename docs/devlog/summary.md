@@ -1,5 +1,16 @@
 # Devlog Summary
 
+- 2026-10-28: **One cloud now hides six messages, each read only from its own eye, in a tour and a capture loop; the full proof kills all 132 mutants.**
+  - 48,000 equally lit particles, 30,254 of them on strokes; stroke/gap ratios at the eyes of 1.70–2.01 at 1280×800 and 1.72–1.90 at 390×844 (seed 1).
+  - 48 headless gates. Review rounds 0–4, with both lanes, found F49–F136, none against the owner's rule. Gate repair stopped after 3 rounds by the canon's reassessment, with F96–F102 stated as bounds in `docs/gates.md`.
+  - Session ends, a browser crash and two restarts stopped the proof five times, so it now runs in resumable batches. Its new runner took three repairs and states its gaps in its header.
+  - AGENTS.md went from 84.5 KB to 29.5 KB, with the gates' proofs moved to `docs/gates.md`.
+  - Open:
+    - nothing has run on a real GPU or with a screen reader;
+    - the fill when fully zoomed in is not bounded;
+    - one recorded pass does not loop as a video (F72, skipped by the owner);
+    - the new runner's process scan has never run on this machine's processes.
+  - Detail: [detailed/2026-10-14_2026-10-28.md](detailed/2026-10-14_2026-10-28.md).
 - 2026-10-14: **A particle cloud that reads "hello world" only from one hidden viewpoint, by geometry alone.**
   - About 4,950 of 18,000 equally lit particles sit on 14°-slanted letter strokes as seen from the secret eye. They keep their distance from it, so the disguise holds everywhere else.
   - The owner rejected an angle-dependent glow as cheating. Without it, the stroke/gap ratio at the angle is 1.6 (2.4 with the glow).
