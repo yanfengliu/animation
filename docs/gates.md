@@ -4,7 +4,27 @@ The detail behind the "Gates" section of [AGENTS.md](../AGENTS.md): what each te
 
 Read this before changing the page or a gate and before judging a mutation run, and update it in the same commit as the change.
 
+## Section map
+
+Read this map first, then only the sections the work touches.
+
+- What each test file proves, with its margins and the mutants that turn it red:
+  - [`tests/illusion.test.mjs`](#testsillusiontestmjs): legibility at each eye, hiding at every other view measured, every particle alike, the lean, streaks and stillness, and the camera modes and dwells.
+  - [`tests/controls.test.mjs`](#testscontrolstestmjs): mouse, wheel, keyboard and touch input.
+  - [`tests/motion.test.mjs`](#testsmotiontestmjs): the tour, coasting and reduced motion.
+  - [`tests/page.test.mjs`](#testspagetestmjs): errors, the font request, the 390 px fit, the no-WebGL2 message and the GPU budget.
+  - [`tests/sequence.test.mjs`](#testssequencetestmjs): the sequence, Play, "Find the angle" and capture mode, and the pictures at its holds and landings.
+  - [`tests/hygiene.test.mjs`](#testshygienetestmjs): the text scan that keeps the tooling headless.
+- What the gates do not prove:
+  - [Bounds](#bounds): the image gates' views, times and seeds, and why no bound holds β at 0.85.
+  - [Page gate bounds](#page-gate-bounds) and [Accessibility](#accessibility).
+  - [Timing check bounds](#timing-check-bounds): the lines where a mutation run's kill may be a timing miss.
+  - [Hygiene scan blind spots](#hygiene-scan-blind-spots), and the harmless forms the scan still flags.
+- [Running the commands](#running-the-commands): when each command last ran, how `npm test` schedules its files and how long each takes, and how the mutation runner counts a kill.
+
 What the suite proves (each file's header states its exact bound):
+
+## `tests/illusion.test.mjs`
 
 - `tests/illusion.test.mjs`:
   - Each message's strokes come from its own text layer (`textof=<name>&layer=text`) over the sky at the same view, so the other messages' particles do not enter its mask. The eyes are the ones in `tests/lib/messages.mjs`, not the ones the page reports. E is hello world's eye.
@@ -54,11 +74,20 @@ What the suite proves (each file's header states its exact bound):
   - The lean, the hiding bound at the antipodes, far views and el±25, and the streak bounds hold for the mean over seeds 1–3, because one seed's values move by more than the gap between the page and its mutants.
     - Each threshold sits between the page and its mutants as measured for seeds 1–3, and the page also passes it for seeds 4–6, 7–9 and 10–12, as a redraw would give.
     - A change that redraws the cloud without changing the design, such as one more `rand()` call in `buildCloud`, another `N_TOTAL`, a glyph tweak or another eye, moves them all. If it turns one red, re-measure seeds 1–3 and the spread over further seeds before touching the threshold. Never retune one just to pass.
+
+## `tests/controls.test.mjs`
+
 - `tests/controls.test.mjs`: real mouse, wheel, keyboard and CDP touch input on a 640×400 page. Covers drag signs, rate and the ±70° clamp; zoom that changes only the field of view; arrow keys; the "Find the angle" glide and its cancel; snap near E; zooming during a glide or snap, which takes at once and holds when the move lands; and touch drag and pinch, including a pinch at E and a pinch after a deliberate 17 px drag away from E, which must not snap.
+
+## `tests/motion.test.mjs`
+
 - `tests/motion.test.mjs`: the camera's own motion, through real mouse input on a 640×400 page. Covers the tour (moves at load, stops on a press, still stopped 9 s later), coasting after a fling, and reduced motion (no tour, no coast once switched on in the same page, "Find the angle" jumps).
   - Reduced motion switched on during a "Find the angle" glide, a snap (an arrow key 1.9° from E) or a coast stops it at once. Every frame after the page hears the change and stamped within 1 s of it is idle: at E for the glide and the snap, and where the frame before the change was for the coast (review round 2, F95). A frame's stamp is the timestamp the page's frame callback gets. The check reads a log of every frame, timed by the same media-query observer as the sequence file's switch test (review round 1, F81).
     - The frame before the change must be in that move, and at least 3 frames must fall in the window. Otherwise the test fails as an error, not a check, since it could not judge; so do its waits for the move to get under way (review round 2, F90).
   - The glide running on (`reduced-switch-find-glides-on`), the snap running on (`reduced-switch-snap-runs-on`) or the coast running on (`reduced-switch-coasts-on`) each turns its own case red.
+
+## `tests/page.test.mjs`
+
 - `tests/page.test.mjs`: no console or page errors (including one message's text layer at its eye); the only request is the Google Fonts stylesheet; if it never answers, the page still draws within 2 s of the time the same load takes with it answered (the two loads start together in one browser, so both see the same CPU load); Tab reaches the canvas and then "Find the angle" with focus styles that change pixels on screen; keys work on the focused canvas; Chromium's accessibility tree exposes the canvas as a focusable application with a role description and a name; the no-WebGL2 message. Each check closes its browser context as soon as it is done.
   - At 390 px nothing overflows sideways, at the start view and with the widest readout the page shows, "AZ 180.1° · EL -70.0°" (21 characters, as at az −179.9 and el −70).
     - The stylesheet is answered three ways: empty, so the browser's monospace fallback shows (0.586 em here); with a stand-in for the web font, DM Mono, a face of that name from the local Courier New (0.600 em); and with that face 10% wider (0.660 em).
@@ -71,6 +100,9 @@ What the suite proves (each file's header states its exact bound):
     - The sample is one animation frame: from the first `requestAnimationFrame` callback the browser runs for it to the first callback of the next frame, so it holds every point draw made in any callback of that frame and in any task before the next. A page that draws the sky and the particles twice in a frame (`draws-twice-a-frame`, at DPR 2, where the second sky covers the first picture) reads 96,000 particles in 2 draws and 5.45–5.90× (review round 2, F89).
     - Measured: 2.72–2.95× (22.6–24.5 M px a frame, the most at "What"'s eye). Unclipped the sum is 24.3–26.1 M; at E it is 24.35 M, the 24.4 M of W16's estimate.
     - The count is every particle in the frame's point draws, so it must equal what the page reports. A second pass of the text particles near E (`reveal-extra-text-pass`) draws 78,254 a frame in 2 draws there (4.35×). 60,000 particles (`more-particles`) cover 3.38–3.66×, and sprites on squares 1.25× wider (`bigger-sprites`) 4.25–4.61×.
+
+## `tests/sequence.test.mjs`
+
 - `tests/sequence.test.mjs`: the sequence and capture mode through real input, read frame by frame through an observer that wraps `requestAnimationFrame`, on 390×300 pages; and the pictures at the sequence's holds and at "Find the angle" landings on 640×400 pages.
   - The tour at load (a visitor's URL) holds at the start view, then glides to each message's eye in sequence order and holds there exactly: every frame of a hold within 1e-6° of the eye, the hold lasting at least 2.5 s of its 3 s from the stamp of its first frame to that of the first frame after it, `target()` naming that message, and naming the next one through the whole glide to it. A frame's stamp is the timestamp the page's frame callback gets, by which the page steps its moves. A hold that follows a glide begins at `performance.now()` in `beginAnim`, during the callback of the frame that lands the glide, so at or after that frame's stamp, not at it (review round 3, F103). So a full hold spans at least 3 s by the stamps, and a frame drawn late does not shorten a hold read this way (review round 2, F90). The hold at the start view is timed by when its frames were logged: at least 1.2 s of its 1.5 s from its first frame to its last (see Bound, F100). It ends idle exactly at "world", and the page reports its six messages with those eyes in that order.
     - A hold's last frames may already name the next message: the frame that ends the hold begins the glide to it, and the glide has not yet moved the camera 1e-6°. Smootherstep takes about 5.3 ms of a 4.4 s glide of 58°, by the page's clock, to move it that far, but a frame's stamp can lag the moment the glide began, so under load two frames at an eye named the next message (2026-10-22).
@@ -103,6 +135,9 @@ What the suite proves (each file's header states its exact bound):
   - None of these pages logs an error.
   - Mutants for review round 0's F69 turn red each capture and contract check it named: the cursor shown (`capture-shows-cursor`), the wheel or the keys steering (`capture-wheel-zooms`, `capture-keys-steer`), one pass without the loop (`capture-plays-once`), `messages` reporting an eye 6° off (`messages-misreported`), `msg` putting the camera 0.5° off its eye (`msg-off-eye`) and `capture` reporting false (`capture-flag-false`). Whether `textof` takes effect is settled by the illusion file's checks at the eyes, which `textof-ignored` turns red (F70).
   - Mutants for review round 1's F86 turn red each sequence check it named: a hold naming the next message for its last 250 ms (`hold-names-next-early`); a "Find the angle" glide that stops naming its message halfway (`find-glide-drops-target`); `msg` that leaves "Find the angle" at the start of the sequence, so from `msg=a` it heads for hello world (`find-ignores-msg`); adding `#capture` back reloading the page (`capture-reentry-reloads`); and Escape taking the anchor out only the first time (`escape-drops-anchor-once`). Not every sequence check has a mutant. None shortens a sequence hold or Play's cut hold, so those bounds on how long a hold lasts are unproven (see Bound, F102), and the rule that a shot starts at least its lead into the hold has none, for the reason above.
+
+## `tests/hygiene.test.mjs`
+
 - `tests/hygiene.test.mjs`: a text scan. This is the gate for the defect in `docs/learning/defect-register.md`.
   - It reads only `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`, `.sh`, `.ps1`, `.cmd` and `.bat` files under `scripts/`, under `tests/` and at the root (such as a Playwright config); the npm scripts; and the commands in the `.claude/settings*.json` files that `.gitignore` does not name. Other file types, such as a `.py` script, are never read.
   - It also reads any repo file of those types, or an extensionless script, that one of those commands or a scanned shell file names by path, at any depth: a hook's `bash .claude/hooks/after-edit.sh`, also behind `$CLAUDE_PROJECT_DIR`.
@@ -120,6 +155,8 @@ What the suite proves (each file's header states its exact bound):
     - The word `powershell` anywhere else is text, as in `git commit -m "fix powershell start script"`.
   - Only Playwright code builds `file:` URLs, including from `import.meta.url` outside `fileURLToPath`.
   - Child processes start only Node, in files and in commands such as `node -e`, whether `child_process` is imported whole, by name, renamed or destructured.
+
+## Bounds
 
 Bound: one engine, headless Chromium 153 with SwiftShader WebGL2, device pixel ratio 1 for the image gates, and only the listed views, times, seeds, `beta` values and inputs. The exact pixel identities rest on SwiftShader's 8-bit additive blending without dithering. The image gates measure light, colour and shape, not whether a person can read the text.
 - The legibility of the five messages after hello world is measured only at t 0, seed 1 and the default zoom; their layout, zoom and readback behaviour are not.
@@ -141,11 +178,15 @@ Bound: one engine, headless Chromium 153 with SwiftShader WebGL2, device pixel r
   - Per seed (1–6), β 1.0 changed it by −0.3% to +37%, +14% on average.
   - So no bound on a three-seed mean tells them apart: β 1.0 at seeds 1–3 lies inside β 0.85's own range. A mean over about 12 seeds would, at about four times the illusion file's cost.
 
+## Page gate bounds
+
 The page gates have their own bounds:
 - The budget check reads the particle count and the sprite fill at the default zoom only, at the start view and the six eyes. Zoomed all the way in at E, the sprites cover about 13.6× the screen (112 M px a frame at 1920×1080 and DPR 2), and no gate bounds that.
 - It cannot show a real GPU's frame rate. It counts the pixels the sprites cover, not shading or memory cost, and SwiftShader allows points up to 320 device px here, where a real GPU may cap them lower. It measures only points drawn with `drawArrays`, by a page that draws from `requestAnimationFrame` callbacks, in one animation frame at each view.
 - The 390 px check reads local fonts on Windows: the browser's monospace fallback and Courier New for the stand-ins. DM Mono's own file is not available offline, so its widths are assumed to be 0.600 em, as most monospace fonts' are. A web font wider than about 0.603 em would cut the widest readout short, as the 0.660 em case shows, but cannot push the buttons out of the bar.
 - The anchor check goes to the address with `#capture` from the test, as a viewer's address bar would; a real host's address bar, and its history rules beyond a `replaceState` and `pushState` that throw, are not tested.
+
+## Timing check bounds
 
 The timing checks have their own bounds:
 - A miss at the tour's or Play's hold at the face, or a second miss in capture mode, fails the run as an error, so a loaded machine can fail `npm test` there without a page defect (F93). But a capture hold before the last that no poll sees, as in a stall that lasts through all 3 s of it, counts as missed only when its 25 s wait runs out. By then the next hold has come and gone too, and it comes round again about 32 s later, after its own 25 s wait has run out. That wait then fails as a check ("not reached within 25000 ms", `tests/sequence.test.mjs:283`) before the retry runs, so a sound page fails with a check (review round 3, F98). A missed hold at "world", the last, goes to the retry instead, which waits up to 60 s (`LOOP_WAIT_MS`) for the next pass (review round 4).
@@ -160,7 +201,11 @@ The timing checks have their own bounds:
 - The reduced-motion cut tests need a frame stamped in the 1 s before their 3.5 s bound. Without one they fail as an error, on a sound page too (`tests/sequence.test.mjs:576` and `:627`). That turns `npm test` red without a page defect, and a mutation run whose control hits it stops with exit 2. R3's final runs had as few as 12 frames in the window (capture mode's switch in the third run), against 29–60 in the other cases. By R3's logged test times the switch test's window falls about when the five other landing pages start (F101). With one, the frame shows only that the cut hold lasted until it, and it may be stamped as early as 2.5 s. So a cut hold that ends between 2.5 and 3.5 s passes when no frame is stamped from its end to 3.5 s: one of 3.0 s needs a 0.5 s gap with no frame, one of 2.8 s a 0.7 s gap. No mutant holds in that range: `reduced-switch-short-hold` holds 2 s, wholly before the window (F96).
 - No mutant shortens a sequence hold or Play's cut hold. None changes `HOLD_MS`, `LOAD_HOLD_MS`, `CAPTURE_HOLD_MS` or `CUT_HOLD_MS` (`index.html:118`), and `reduced-switch-short-hold` shortens only the cut hold that switching reduced motion on begins. By stamps a sound page's hold spans at least its 3 s, and Play's cut hold at least its 4 s, so the 0.5 s of slack in each bound is never used. By the code, the 2.5 s bound passes a hold of 2.6 s and the 3.5 s bound a Play cut hold of 3.6 s, against the 3 s and 4 s that README.md states; no run has tried either (F102).
 
+## Accessibility
+
 No screen reader was available, so the accessibility check reads Chromium's tree, not what NVDA or JAWS do with it.
+
+## Hygiene scan blind spots
 
 The hygiene scan's blind spots:
 - code assembled at run time: `eval`, strings or names built from pieces, computed keys such as `cp['exec']`, a launch method reached by destructuring;
@@ -177,3 +222,27 @@ The hygiene scan's blind spots:
 - the desktop app's own browser pane, which opened the file in the original incident.
 
 It still flags a few harmless forms, listed in its header: a `pause()` on a non-page receiver whose chain names "page" or on a bound name that holds no page, a program's own `-c` switch before a quoted opener word, a separator inside quoted text before an opener word (`echo "a; open b"`, `echo "(a) else open b"`), an opener word passed as an argument after `powershell -File` and its script, and a launch method's or `child_process`'s name inside a string.
+
+## Running the commands
+
+Each command below was run on Windows 11 with Node 24.18.1 on 2026-10-11. `npm test` last ran on 2026-10-28, and the full mutation proof ended that day, both on the final code; the `seq` and `between` shoot presets last ran on 2026-10-22, after R3.
+
+- `npm ci` installs the one dev dependency, Playwright 1.63.0 (pinned). It installs no browser, because neither `playwright` nor `playwright-core` has an install script.
+- `npx playwright install chromium` then puts that version's Chromium (153.0.8010.12) in the local Playwright cache. When the build is already there it reuses it and downloads nothing (2 s here). The gates use only that cache; nothing downloads at test time.
+- `npm test` runs the headless suite through `tests/run.mjs`: 48 tests in about 3.9 minutes (231.7, 229.8 and 231.4 s over three runs on 2026-10-22 after R3). In those runs the illusion file took 100.9–103.6 s, the sequence phase 83.8–86.6 s, the last phase 43.8–44.0 s and the budget test 3.18 s. On the final code it took 266.0 s on 2026-10-25 (128.9, 89.9 and 47.2 s by phase) and 241.8 s on 2026-10-28 (107.4, 87.7 and 46.6 s).
+  - It runs `tests/illusion.test.mjs` alone first, then `tests/sequence.test.mjs` beside only the hygiene scan, which opens no browser, then the other `tests/*.test.mjs` files two at a time, because SwiftShader WebGL2 is CPU-heavy (`tests/lib/phases.mjs`). So the timing checks, the font-hang loads and the control fling, never run beside the illusion file's renders or the sequence file's pages.
+  - Beside the sequence file the font-hang check failed once: its load with the stylesheet answered took 2.7 s and the one with it hung 6.1 s, 1.4 s past its 2 s margin (2026-10-22). In the third phase they took 0.37–0.52 s and 0.40–0.57 s over four runs.
+  - `tests/sequence.test.mjs` opens six browsers of its own and keeps up to ten pages drawing in them at once for about 85 s: 390×300 pages for the camera's path, which it checks from a log of every frame, not from reads at set times, and 640×400 pages for the pictures at the sequence's holds, at the end of the tour and the six "Find the angle" landings after it, and at the five other "Find the angle" landings. Ten is read from its schedule, not measured: the two path pages, the switch test's two, the tour picture page and the five other landing pages (review round 2, F95).
+  - The illusion file queues most of its views at start and renders up to four at a time in four browsers, because each browser draws all its pages in one GPU process. `pump()` hands each 1280×800 view to the next browser in turn without checking which one is free, so two can render in one browser at once; every 390×844 view renders in browser 0 and every blank-readback view in browser 1. The seed test renders outside the queue. The camera-mode test times its shots, so it runs last: it pauses `pump()` and waits for the renders in flight, so no queued view renders beside its two pages.
+  - It exits 1 when a test fails, a file fails to load or no test passed. `PAGE=<path relative to the repo root>` runs it against another copy of the page.
+- `npm run shoot -- --preset=<name>` is the visual instrument; the header of `scripts/shoot.mjs` lists its options. `magic` shoots hello world at its eye E, `off` the views around E, and `all` both. `seq` shoots every message at its own eye, and `between` the views away from the eyes: the midpoints, each eye's back view, above, below and the start view. It also takes single views. It saves PNGs under `tmp/shots/` and prints each one's sha256 and what the page reports. A view that moves (`capture=1`, or `tour=1` without `reduced=1`) is checked on the view an init script latches as the page's first ready frame ends, so a slow read cannot miss it; with a read delayed 2.5 s, the unlatched check reported that `msg=world` did not take (review round 1, F83). A visual change still needs someone to look at the shots at native resolution; the gates do not replace that.
+- `node tests/mutate.mjs [name ...]` re-proves the gates.
+  - It first runs, as a control, the gate files its mutants use (the page gates, the hygiene scan or both) on the real page and tree, and stops with exit 2 unless every test passes.
+  - It then writes each mutant under `tmp/mutants/` and runs the gates against it, in the phases `npm test` uses. Each red test prints as CHECK (an assertion failed, an `until` timeout included) or ERROR (anything else, such as a browser that does not launch), with its test-file line.
+  - A page that never becomes ready is an ERROR in every test that needs a drawn page, because each one waits through the harness, which throws a plain Error. That includes the font-hang test, whose baseline load waits that way. The no-WebGL2 test is the exception: a page whose script never runs shows no message there, a CHECK, but then no test passes, so the mutant is flagged.
+  - A mutant counts as killed only by a CHECK. One with only ERRORs is "errored". One with 0 green tests is flagged, since it may break the page wholesale rather than the one behaviour it names.
+  - A CHECK printed at one of the timing lines that `docs/gates.md` lists may be a timing miss, not the mutant's defect, so read its message (F98–F100).
+  - It exits 1 on any survivor, errored or flagged mutant.
+  - Tree mutants are copies of the repo without `.git`, `node_modules`, `tmp`, test output and `.claude/worktrees`, so any file a command names is there too. Each is deleted once scanned.
+  - Run it after changing a gate or the page. It holds 132 mutants: 109 page, 23 tree. The last full run, of all 132 on the final code, ran in 12 batches of 11 from 2026-10-26 to 2026-10-28 (`docs/policies/local-rules.md`): 8.7 hours of batches, about 264 s per page mutant (220–312 s), since each runs every page gate file in the phases above, and 247–312 s for each control that ran the page gates. So run only the mutants a change touches by name, and keep it the only browser workload while it runs.
+  - A β 1.0 mutant (`full-relocation`) stays retired: review round 3 (F25) looked for a bound on a three-seed mean that holds β at 0.85 and found none (see Bound in [docs/gates.md](gates.md)). Until a gate holds it, β stays at 0.85 by decision ([docs/learning/lessons.md](learning/lessons.md)).

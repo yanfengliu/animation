@@ -1,5 +1,9 @@
 # Devlog Summary
 
+- 2026-10-29: **AGENTS.md keeps what every session needs; the rest moved, sentence for sentence, to the docs it links.**
+  - AGENTS.md's own text went from 15,920 to 7,533 bytes. Each command keeps its opening sentence, with when it last ran, how `npm test` schedules its files and the mutation runner's rules in a new "Running the commands" section of `docs/gates.md`; each invariant keeps its opening, with the rest in `docs/invariants.md`.
+  - `docs/gates.md` opens with a section map and has a heading per test file and per bound. The full proof's runner mechanics moved from the local rules to `docs/policies/rules/full-mutation-proof.md`.
+  - A script found every old sentence in its new home and went red on a planted deletion. No page, gate or test changed.
 - 2026-10-28: **One cloud now hides six messages, each read only from its own eye, in a tour and a capture loop; the full proof kills all 132 mutants.**
   - 48,000 equally lit particles, 30,254 of them on strokes; stroke/gap ratios at the eyes of 1.70–2.01 at 1280×800 and 1.72–1.90 at 390×844 (seed 1).
   - 48 headless gates. Review rounds 0–4, with both lanes, found F49–F136, none against the owner's rule. Gate repair stopped after 3 rounds by the canon's reassessment, with F96–F102 stated as bounds in `docs/gates.md`.
