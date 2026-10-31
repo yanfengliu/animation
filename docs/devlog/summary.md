@@ -1,5 +1,6 @@
 # Devlog Summary
 
+- 2026-10-30: **The local rules' opening line says where the fleet constitution lives since fleet work unit 28 split it: its core in AGENTS.md, the rest in `../fleet/docs/skills/coordinator.md` and `../fleet/docs/work-rules.md`.** Docs only.
 - 2026-10-29: **AGENTS.md keeps what every session needs; the rest moved, sentence for sentence, to the docs it links.**
   - AGENTS.md's own text went from 15,920 to 7,533 bytes. Each command keeps its opening sentence, with when it last ran, how `npm test` schedules its files and the mutation runner's rules in a new "Running the commands" section of `docs/gates.md`; each invariant keeps its opening, with the rest in `docs/invariants.md`.
   - `docs/gates.md` opens with a section map and has a heading per test file and per bound. The full proof's runner mechanics moved from the local rules to `docs/policies/rules/full-mutation-proof.md`.
